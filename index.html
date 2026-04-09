@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chrono — Timeline Builder</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       TOP BAR
+  ═══════════════════════════════════════════ -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <div class="logo">
+        <span class="logo-mark">◈</span>
+        <span class="logo-text">Chrono</span>
+      </div>
+      <div class="topbar-divider"></div>
+      <span class="timeline-name" id="timelineName" contenteditable="true" spellcheck="false">Untitled Timeline</span>
+    </div>
+
+    <div class="topbar-center">
+      <div class="zoom-control">
+        <button class="icon-btn" id="zoomOut" title="Zoom out">−</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+        <button class="icon-btn" id="zoomIn" title="Zoom in">+</button>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button class="btn-ghost" id="storyModeBtn" title="Story mode">
+        <span class="btn-icon">▶</span> Story Mode
+      </button>
+      <button class="btn-ghost" id="importBtn" title="Import JSON">Import</button>
+      <button class="btn-ghost" id="exportBtn" title="Export JSON">Export</button>
+      <button class="btn-primary" id="addEventBtn">+ Add Event</button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════
+       MAIN CANVAS
+  ═══════════════════════════════════════════ -->
+  <main id="canvasWrapper">
+    <div id="canvas">
+      <!-- Timeline axis -->
+      <div id="timelineAxis">
+        <div id="axisLine"></div>
+        <div id="ticksLayer"></div>
+      </div>
+
+      <!-- SVG layer for connections -->
+      <svg id="connectionsSvg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowhead" markerWidth="6" markerHeight="4"
+                  refX="6" refY="2" orient="auto">
+            <polygon points="0 0, 6 2, 0 4" fill="#444" />
+          </marker>
+        </defs>
+      </svg>
+
+      <!-- Nodes layer -->
+      <div id="nodesLayer"></div>
+    </div>
+  </main>
+
+  <!-- ═══════════════════════════════════════════
+       MINI-MAP
+  ═══════════════════════════════════════════ -->
+  <div id="minimap">
+    <div class="minimap-header">
+      <span class="minimap-label">Overview</span>
+    </div>
+    <div id="minimapCanvas">
+      <div id="minimapViewport"></div>
+      <div id="minimapNodes"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       STATUS BAR
+  ═══════════════════════════════════════════ -->
+  <footer id="statusBar">
+    <span id="statusMsg">Ready — drag canvas to pan, scroll to zoom</span>
+    <div class="status-right">
+      <span id="nodeCount">0 events</span>
+      <span class="status-divider">·</span>
+      <span id="coordDisplay">x: 0  y: 0</span>
+    </div>
+  </footer>
+
+  <!-- ═══════════════════════════════════════════
+       ADD / EDIT EVENT MODAL
+  ═══════════════════════════════════════════ -->
+  <div id="modalOverlay" class="hidden">
+    <div id="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalTitle">New Event</h2>
+        <button class="modal-close" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label">Title</label>
+          <input type="text" id="eventTitle" class="field-input" placeholder="Event name…" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label class="field-label">Description</label>
+          <textarea id="eventDesc" class="field-textarea" placeholder="What happened? Notes, context, details…" rows="4"></textarea>
+        </div>
+        <div class="field">
+          <label class="field-label">Date / Label <span class="field-hint">(optional)</span></label>
+          <input type="text" id="eventDate" class="field-input" placeholder="e.g. Jan 2024, Day 3, Chapter II…" autocomplete="off" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" id="modalCancel">Cancel</button>
+        <button class="btn-primary" id="modalSave">Save Event</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       CONNECT MODE TOOLTIP
+  ═══════════════════════════════════════════ -->
+  <div id="connectTooltip" class="hidden">
+    Click another node to connect — <kbd>Esc</kbd> to cancel
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       STORY MODE OVERLAY
+  ═══════════════════════════════════════════ -->
+  <div id="storyOverlay" class="hidden">
+    <div id="storyCard">
+      <div class="story-meta" id="storyMeta"></div>
+      <h2 class="story-title" id="storyTitle"></h2>
+      <p class="story-desc" id="storyDesc"></p>
+    </div>
+    <div id="storyNav">
+      <button class="story-btn" id="storyPrev">←</button>
+      <span id="storyProgress"></span>
+      <button class="story-btn" id="storyNext">→</button>
+      <button class="story-exit" id="storyExit">Exit Story Mode</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       CONTEXT MENU
+  ═══════════════════════════════════════════ -->
+  <div id="contextMenu" class="hidden">
+    <button class="ctx-item" data-action="edit">Edit</button>
+    <button class="ctx-item" data-action="connect">Connect to…</button>
+    <button class="ctx-item ctx-danger" data-action="delete">Delete</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       IMPORT INPUT (hidden)
+  ═══════════════════════════════════════════ -->
+  <input type="file" id="importFileInput" accept=".json" class="sr-only" />
+
+  <script src="app.js"></script>
+</body>
+</html>

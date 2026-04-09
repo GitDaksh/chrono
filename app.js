@@ -1,223 +1,453 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- * CHRONO — Timeline Builder
- * app.js — Complete application logic
- *
- * Architecture:
- *   State → Render → Events (no framework, just clean vanilla JS)
- *   Each section is clearly labeled.
+ * CHRONO — app.js
+ * Sections:
+ *   1.  Historical Templates Data
+ *   2.  State
+ *   3.  DOM refs
+ *   4.  Utils
+ *   5.  Welcome Screen
+ *   6.  App Shell show/hide
+ *   7.  Canvas — pan & zoom
+ *   8.  Events — create / edit / delete
+ *   9.  Node rendering
+ *   10. Node interaction — click / card
+ *   11. Node drag & drop
+ *   12. Connections (SVG)
+ *   13. Connect mode
+ *   14. Context menu
+ *   15. Mini-map
+ *   16. Story mode
+ *   17. Templates panel
+ *   18. New timeline flow
+ *   19. Export / Import
+ *   20. Keyboard shortcuts
+ *   21. Init
  * ═══════════════════════════════════════════════════════════════
  */
 
 'use strict';
 
 /* ═══════════════════════════════════════════════════════════════
-   1. STATE
+   1. HISTORICAL TEMPLATES DATA
 ═══════════════════════════════════════════════════════════════ */
 
-const State = {
-  // Timeline data
-  events: [],          // Array of EventObject
-  connections: [],     // Array of { fromId, toId }
-  nextId: 1,
-
-  // Canvas transform
-  panX: 0,             // canvas offset X (px)
-  panY: 0,             // canvas offset Y (px)
-  zoom: 1,             // scale factor
-
-  // Canvas interaction
-  isPanning: false,
-  panStartX: 0,
-  panStartY: 0,
-  panStartMouseX: 0,
-  panStartMouseY: 0,
-
-  // Node dragging
-  draggingNode: null,  // { id, startX, startMouseX }
-  dragHasMoved: false,
-
-  // Connect mode
-  connectMode: false,
-  connectFromId: null,
-
-  // UI
-  openCardId: null,    // which node card is open
-  editingId: null,     // for modal edits
-  storyIndex: 0,
-
-  // Canvas center reference (viewport center in canvas coords)
-  get viewportCenterX() {
-    const vw = window.innerWidth, vh = window.innerHeight - 72;
-    return (-State.panX + vw / 2) / State.zoom;
-  },
-  get viewportCenterY() {
-    const vw = window.innerWidth, vh = window.innerHeight - 72;
-    return (-State.panY + vh / 2) / State.zoom;
-  },
-
-  // SNAP
-  SNAP_GRID: 40,       // px — horizontal snap grid
-  AXIS_Y: 5000,        // canvas center Y (axis position)
-  STEM_MIN: 40,        // min stem height
-  STEM_MAX: 140,
-};
-
-/* EventObject shape:
+const TEMPLATES = [
   {
-    id: number,
-    title: string,
-    desc: string,
-    date: string,
-    x: number,          // canvas X (along axis)
-    side: 'above'|'below',
-    stemHeight: number,
-  }
-*/
+    id: 'ww1',
+    name: 'World War I',
+    era: '1914 – 1918',
+    preview: 'From the assassination of Archduke Franz Ferdinand to the Armistice',
+    events: [
+      { title: 'Assassination of Archduke Franz Ferdinand', desc: 'Archduke Franz Ferdinand of Austria-Hungary and his wife Sophie are assassinated in Sarajevo by Gavrilo Princip, a Bosnian-Serb nationalist. The event triggers a chain reaction of declarations of war across Europe.', date: 'June 28, 1914', side: 'above', stemHeight: 90 },
+      { title: 'Austria-Hungary Declares War on Serbia', desc: 'Following Serbia\'s partial rejection of its ultimatum, Austria-Hungary formally declares war. Russia begins mobilizing in support of Serbia, escalating the crisis across the continent.', date: 'July 28, 1914', side: 'below', stemHeight: 70 },
+      { title: 'Germany Declares War on Russia & France', desc: 'Germany invokes the Schlieffen Plan, declaring war on Russia (Aug 1) and France (Aug 3). The plan calls for a rapid defeat of France through Belgium before turning to face Russia in the east.', date: 'Aug 1–3, 1914', side: 'above', stemHeight: 110 },
+      { title: 'Britain Enters the War', desc: 'Following Germany\'s invasion of neutral Belgium, Britain declares war on Germany. The conflict is now truly world-spanning, drawing in colonial forces from Africa, Asia, and the Americas.', date: 'Aug 4, 1914', side: 'below', stemHeight: 60 },
+      { title: 'First Battle of the Marne', desc: 'Allied forces halt the German advance into France, ending any hope of a swift German victory. The war shifts to static trench warfare along the Western Front — a line that will barely move for four years.', date: 'Sep 1914', side: 'above', stemHeight: 95 },
+      { title: 'Battle of Verdun Begins', desc: 'Germany launches a massive offensive at Verdun designed to bleed France white. The battle lasts 10 months, resulting in roughly 700,000 casualties. It becomes the longest and one of the most devastating battles of the war.', date: 'Feb 21, 1916', side: 'below', stemHeight: 80 },
+      { title: 'Battle of the Somme', desc: 'The British-led offensive on the Somme results in nearly 60,000 British casualties on the first day alone — the bloodiest day in British military history. The battle lasts until November, gaining just a few miles of territory.', date: 'Jul 1, 1916', side: 'above', stemHeight: 115 },
+      { title: 'USA Enters the War', desc: 'After Germany resumes unrestricted submarine warfare and the revelation of the Zimmermann Telegram (proposing a German-Mexican alliance), the United States declares war on Germany, bringing fresh troops and resources to the Allies.', date: 'Apr 6, 1917', side: 'below', stemHeight: 75 },
+      { title: 'Russian Revolution & Exit', desc: 'The October Revolution topples the Tsar. The Bolshevik government, seeking to end Russian involvement, signs the Treaty of Brest-Litovsk with Germany, freeing German divisions to move west.', date: '1917', side: 'above', stemHeight: 100 },
+      { title: 'The Hundred Days Offensive', desc: 'The Allied Powers launch a massive counter-offensive beginning with the Battle of Amiens. German forces are pushed back continuously over 100 days, collapsing morale and triggering political crisis in Germany.', date: 'Aug 8, 1918', side: 'below', stemHeight: 65 },
+      { title: 'Armistice — War Ends', desc: 'At 11:00 AM on November 11, an armistice is signed in a railway carriage in the Compiègne forest. Guns fall silent on the Western Front. The war leaves 20 million dead and reshapes the world order entirely.', date: 'Nov 11, 1918', side: 'above', stemHeight: 105 },
+    ],
+    connections: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[4,6],[7,9]]
+  },
+  {
+    id: 'ww2',
+    name: 'World War II',
+    era: '1939 – 1945',
+    preview: 'From the invasion of Poland to the atomic bombings and Allied victory',
+    events: [
+      { title: 'Germany Invades Poland', desc: 'Germany launches a Blitzkrieg invasion of Poland using tanks, aircraft, and motorized infantry. Britain and France declare war on Germany two days later. The Soviet Union invades Poland from the east on September 17, following the Molotov-Ribbentrop Pact.', date: 'Sep 1, 1939', side: 'above', stemHeight: 85 },
+      { title: 'Fall of France', desc: 'Germany bypasses the Maginot Line through the Ardennes, encircling Allied forces. France falls in six weeks — a stunning defeat. The British Expeditionary Force is evacuated from Dunkirk, and France signs an armistice on June 22.', date: 'May–Jun 1940', side: 'below', stemHeight: 75 },
+      { title: 'Battle of Britain', desc: 'The RAF defeats the Luftwaffe\'s attempt to achieve air superiority over Britain — a prerequisite for a German invasion. The battle is the first major campaign fought entirely by air forces. Churchill\'s famous speech: "Never was so much owed by so many to so few."', date: 'Jul–Oct 1940', side: 'above', stemHeight: 110 },
+      { title: 'Operation Barbarossa', desc: 'Germany invades the Soviet Union with 3 million troops across a 2,900 km front — the largest military operation in history. Initial advances are staggering, but German forces are halted short of Moscow as winter sets in.', date: 'Jun 22, 1941', side: 'below', stemHeight: 90 },
+      { title: 'Attack on Pearl Harbor', desc: 'Japan launches a surprise attack on the US naval base at Pearl Harbor, Hawaii, destroying or damaging 19 ships and killing over 2,400 Americans. The United States declares war on Japan the next day; Germany and Italy declare war on the US four days later.', date: 'Dec 7, 1941', side: 'above', stemHeight: 100 },
+      { title: 'Battle of Stalingrad', desc: 'One of the largest and deadliest battles in history. The Soviet counter-offensive Operation Uranus encircles the German Sixth Army. Germany suffers its worst defeat — 800,000 Axis casualties — marking the turning point on the Eastern Front.', date: 'Aug 1942 – Feb 1943', side: 'below', stemHeight: 70 },
+      { title: 'D-Day — Normandy Landings', desc: 'Operation Overlord: 156,000 Allied troops storm five beaches in Normandy, France, in the largest seaborne invasion in history. Despite heavy casualties, the beachhead is secured, opening a second front and beginning the liberation of Western Europe.', date: 'Jun 6, 1944', side: 'above', stemHeight: 120 },
+      { title: 'Liberation of Paris', desc: 'Allied forces liberate Paris after four years of German occupation. General de Gaulle leads a triumphant march down the Champs-Élysées. The liberation is a massive symbolic and psychological blow to Germany.', date: 'Aug 25, 1944', side: 'below', stemHeight: 65 },
+      { title: 'Battle of the Bulge', desc: 'Germany\'s last major offensive on the Western Front — a desperate gamble in the Ardennes. After initial surprise gains, Allied forces, including General Patton\'s Third Army, repel the attack. Germany loses irreplaceable men and equipment.', date: 'Dec 1944 – Jan 1945', side: 'above', stemHeight: 95 },
+      { title: 'VE Day — Victory in Europe', desc: 'Germany surrenders unconditionally. Hitler has died by suicide in his Berlin bunker on April 30. The war in Europe is over. Millions celebrate in the streets of London, Paris, New York, and Moscow.', date: 'May 8, 1945', side: 'below', stemHeight: 80 },
+      { title: 'Atomic Bombings of Hiroshima & Nagasaki', desc: 'The US drops atomic bombs on Hiroshima (Aug 6) and Nagasaki (Aug 9). Hiroshima is devastated instantly, killing 70,000–80,000 people; tens of thousands more die from radiation. The bombings shock Japan into surrender.', date: 'Aug 6–9, 1945', side: 'above', stemHeight: 105 },
+      { title: 'VJ Day — Victory over Japan', desc: 'Japan announces its surrender on August 15; the formal surrender ceremony takes place on September 2 aboard USS Missouri in Tokyo Bay. World War II is over. The world begins the long process of rebuilding — and confronts the new atomic age.', date: 'Sep 2, 1945', side: 'below', stemHeight: 75 },
+    ],
+    connections: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[3,5],[4,6]]
+  },
+  {
+    id: 'coldwar',
+    name: 'The Cold War',
+    era: '1947 – 1991',
+    preview: 'The ideological struggle between the USA and USSR that shaped the modern world',
+    events: [
+      { title: 'Truman Doctrine', desc: 'President Truman pledges US support for nations threatened by communist expansion, beginning with Greece and Turkey. This marks the formal beginning of the containment strategy that will define US foreign policy for decades.', date: 'Mar 1947', side: 'above', stemHeight: 80 },
+      { title: 'Berlin Blockade & Airlift', desc: 'The Soviet Union blockades West Berlin, cutting off land access. The Western Allies respond with a massive 11-month airlift, delivering supplies daily. Stalin ends the blockade in May 1949, marking the first major Cold War confrontation.', date: '1948–1949', side: 'below', stemHeight: 70 },
+      { title: 'NATO Founded', desc: 'The North Atlantic Treaty Organization is established, binding Western nations to collective defense. The Soviet Union responds in 1955 with the Warsaw Pact, dividing Europe into two opposing military blocs.', date: 'Apr 1949', side: 'above', stemHeight: 95 },
+      { title: 'Korean War', desc: 'North Korea, backed by China and the Soviet Union, invades South Korea. UN forces, led by the US, intervene. Three years of brutal fighting end in an armistice — not a peace treaty — restoring the original border near the 38th parallel.', date: '1950–1953', side: 'below', stemHeight: 65 },
+      { title: 'Sputnik Launch', desc: 'The Soviet Union launches Sputnik 1, the world\'s first artificial satellite. The beep of Sputnik terrifies Americans — if the Soviets can reach orbit, they can reach any city on Earth with a nuclear warhead. The Space Race begins in earnest.', date: 'Oct 4, 1957', side: 'above', stemHeight: 110 },
+      { title: 'Cuban Missile Crisis', desc: 'US U-2 spy planes discover Soviet nuclear missiles in Cuba. For 13 days, the world stands on the brink of nuclear war. Kennedy and Khrushchev negotiate: the Soviets remove missiles from Cuba; the US secretly removes missiles from Turkey.', date: 'Oct 1962', side: 'below', stemHeight: 90 },
+      { title: 'Apollo 11 Moon Landing', desc: 'NASA astronauts Neil Armstrong and Buzz Aldrin become the first humans to walk on the Moon. Armstrong\'s famous words: "One small step for man, one giant leap for mankind." The US wins the Space Race decisively.', date: 'Jul 20, 1969', side: 'above', stemHeight: 85 },
+      { title: 'Vietnam War Ends', desc: 'The fall of Saigon marks the end of the Vietnam War with a North Vietnamese victory. Despite 58,000 American lives lost and immense resources spent, the US-backed South Vietnam has fallen. A devastating loss for US credibility and containment strategy.', date: 'Apr 30, 1975', side: 'below', stemHeight: 75 },
+      { title: 'Soviet Invasion of Afghanistan', desc: 'The Soviet Union invades Afghanistan to prop up its communist government. The US, Saudi Arabia, and Pakistan fund and arm the Mujahideen resistance. The conflict becomes the Soviet Union\'s Vietnam, draining resources and lives for a decade.', date: 'Dec 1979', side: 'above', stemHeight: 100 },
+      { title: 'Fall of the Berlin Wall', desc: 'East Germany announces that its citizens may cross freely. Crowds gather and begin dismantling the wall with hammers. The most potent symbol of the Iron Curtain falls — signaling the imminent collapse of communist Eastern Europe.', date: 'Nov 9, 1989', side: 'below', stemHeight: 115 },
+      { title: 'Dissolution of the USSR', desc: 'The Soviet Union officially ceases to exist. Fifteen independent republics emerge. Mikhail Gorbachev resigns as the last Soviet president. The Cold War is over — the United States stands as the world\'s sole superpower.', date: 'Dec 25, 1991', side: 'above', stemHeight: 80 },
+    ],
+    connections: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[4,6],[5,7]]
+  },
+  {
+    id: 'spaceracing',
+    name: 'The Space Race',
+    era: '1957 – 1972',
+    preview: 'Humanity\'s race from Sputnik to the Moon and beyond',
+    events: [
+      { title: 'Sputnik 1 — First Satellite', desc: 'The Soviet Union shocks the world by launching Sputnik 1, the first artificial Earth satellite. Its radio beeps can be picked up worldwide, demonstrating Soviet technological capability and causing widespread anxiety in the West.', date: 'Oct 4, 1957', side: 'above', stemHeight: 85 },
+      { title: 'Laika in Space', desc: 'The Soviet dog Laika becomes the first animal to orbit Earth aboard Sputnik 2. The mission proves living beings can survive launch, though Laika does not survive the mission — her fate raises early questions about space ethics.', date: 'Nov 3, 1957', side: 'below', stemHeight: 70 },
+      { title: 'Explorer 1 — First US Satellite', desc: 'The US responds to Sputnik with Explorer 1, its first successfully launched satellite. Explorer 1 discovers the Van Allen radiation belts — its most lasting scientific contribution. NASA is founded later in 1958.', date: 'Jan 31, 1958', side: 'above', stemHeight: 95 },
+      { title: 'Yuri Gagarin — First Human in Space', desc: 'Soviet cosmonaut Yuri Gagarin orbits the Earth once in Vostok 1, completing the flight in 108 minutes. He becomes an international celebrity overnight. President Kennedy, deeply shaken, escalates the US space program dramatically.', date: 'Apr 12, 1961', side: 'below', stemHeight: 110 },
+      { title: 'Kennedy\'s Moon Speech', desc: 'President Kennedy addresses Congress: "I believe that this nation should commit itself to achieving the goal, before this decade is out, of landing a man on the Moon and returning him safely to Earth." NASA\'s budget explodes.', date: 'May 25, 1961', side: 'above', stemHeight: 75 },
+      { title: 'John Glenn Orbits Earth', desc: 'John Glenn becomes the first American to orbit Earth, completing three orbits aboard Friendship 7. His flight restores American confidence and makes Glenn a national hero. The US begins to close the gap with the Soviets.', date: 'Feb 20, 1962', side: 'below', stemHeight: 90 },
+      { title: 'First Spacewalk — Alexei Leonov', desc: 'Soviet cosmonaut Alexei Leonov performs the first extravehicular activity (EVA), spending 12 minutes outside his spacecraft. His suit inflates dangerously in the vacuum; he barely makes it back inside. Another Soviet first.', date: 'Mar 18, 1965', side: 'above', stemHeight: 100 },
+      { title: 'Apollo 1 Tragedy', desc: 'Astronauts Gus Grissom, Ed White, and Roger Chaffee are killed in a launch pad fire during a routine test of the Apollo 1 spacecraft. The disaster leads to a comprehensive redesign of the Apollo capsule and an 18-month delay.', date: 'Jan 27, 1967', side: 'below', stemHeight: 80 },
+      { title: 'Apollo 8 — First to the Moon', desc: 'Astronauts Frank Borman, Jim Lovell, and William Anders become the first humans to orbit the Moon. The iconic "Earthrise" photograph — Earth rising over the lunar surface — becomes one of the most influential images ever taken.', date: 'Dec 1968', side: 'above', stemHeight: 105 },
+      { title: 'Apollo 11 — Moon Landing', desc: '"The Eagle has landed." Neil Armstrong and Buzz Aldrin land on the Moon\'s Sea of Tranquility while Michael Collins orbits above. Armstrong\'s first steps on the lunar surface are watched live by an estimated 600 million people worldwide.', date: 'Jul 20, 1969', side: 'below', stemHeight: 125 },
+      { title: 'Apollo 13 — Successful Failure', desc: '"Houston, we have a problem." An oxygen tank explosion cripples the spacecraft on the way to the Moon. Through extraordinary teamwork and improvisation, the crew returns safely to Earth. NASA calls it "our finest hour."', date: 'Apr 1970', side: 'above', stemHeight: 70 },
+      { title: 'Last Moon Landing — Apollo 17', desc: 'Astronauts Eugene Cernan and Harrison Schmitt spend over three days on the lunar surface — the longest Apollo mission. As Cernan steps off the Moon, he becomes the last human to walk on another world. No one has returned since.', date: 'Dec 1972', side: 'below', stemHeight: 90 },
+    ],
+    connections: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[3,5],[8,10]]
+  },
+  {
+    id: 'internet',
+    name: 'The Internet Age',
+    era: '1969 – 2010s',
+    preview: 'From ARPANET to the smartphone era — the digital revolution',
+    events: [
+      { title: 'ARPANET First Message', desc: 'The first message is sent over ARPANET between UCLA and the Stanford Research Institute. The message is "LO" — the network crashes after two letters. Nevertheless, this is the birth of what will become the internet.', date: 'Oct 29, 1969', side: 'above', stemHeight: 80 },
+      { title: 'TCP/IP Protocol', desc: 'Vint Cerf and Bob Kahn publish the specifications for TCP/IP, the foundational communication protocol of the internet. This allows different types of networks to communicate with each other — the key that unlocks the global internet.', date: '1974', side: 'below', stemHeight: 70 },
+      { title: 'World Wide Web Invented', desc: 'Tim Berners-Lee, a British scientist at CERN, invents the World Wide Web and proposes it as a way to share information via hypertext. He creates the first web browser and web server. The first website goes live at CERN.', date: '1989–1991', side: 'above', stemHeight: 100 },
+      { title: 'Mosaic Browser Released', desc: 'NCSA releases Mosaic, the first graphical web browser to display images inline with text. Suddenly, the web becomes visual and accessible to non-technical users. Web traffic grows by 341,634% in 1993 alone.', date: '1993', side: 'below', stemHeight: 75 },
+      { title: 'Amazon & eBay Founded', desc: 'Jeff Bezos founds Amazon as an online bookstore; Pierre Omidyar founds eBay as an online auction site. Both companies will transform commerce globally. The dot-com boom is underway, attracting billions in venture capital.', date: '1994–1995', side: 'above', stemHeight: 90 },
+      { title: 'Google Founded', desc: 'Larry Page and Sergey Brin launch Google, based on their PageRank algorithm. Google\'s clean interface and relevant results quickly make it the dominant search engine, displacing Yahoo and AltaVista.', date: 'Sep 4, 1998', side: 'below', stemHeight: 65 },
+      { title: 'Dot-com Bust', desc: 'The NASDAQ peaks in March 2000 at 5,048 points then crashes, losing 78% of its value by 2002. Hundreds of internet companies fail. The bust separates sustainable businesses (Amazon, Google) from hype-driven failures.', date: '2000–2002', side: 'above', stemHeight: 110 },
+      { title: 'Wikipedia Launched', desc: 'Jimmy Wales and Larry Sanger launch Wikipedia, a free, collaborative encyclopedia. It grows exponentially through volunteer contributions. Within years it becomes one of the most visited sites on the web — a radical experiment in collective knowledge.', date: 'Jan 15, 2001', side: 'below', stemHeight: 80 },
+      { title: 'Facebook Goes Global', desc: 'Mark Zuckerberg opens Facebook to anyone over 13 with an email address. The site rapidly grows past 100 million users. Social networking becomes a defining feature of the digital age, transforming how people communicate and share information.', date: '2006', side: 'above', stemHeight: 95 },
+      { title: 'iPhone Launched', desc: 'Steve Jobs unveils the original iPhone: "An iPod, a phone, and an internet communicator." The smartphone era begins. Within years, mobile internet traffic surpasses desktop, and billions of people carry the full power of the internet in their pockets.', date: 'Jan 9, 2007', side: 'below', stemHeight: 120 },
+    ],
+    connections: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[2,4],[4,6],[6,8]]
+  },
+  {
+    id: 'renaissance',
+    name: 'The Renaissance',
+    era: '1300s – 1600s',
+    preview: 'The rebirth of art, science, and humanism that transformed Europe',
+    events: [
+      { title: 'Black Death Sweeps Europe', desc: 'The bubonic plague kills one-third of Europe\'s population. The catastrophe disrupts feudal society, triggers labor shortages that empower peasants, and shakes faith in the Church — indirectly creating conditions for the Renaissance and Reformation.', date: '1347–1351', side: 'above', stemHeight: 80 },
+      { title: 'Gutenberg\'s Printing Press', desc: 'Johannes Gutenberg develops movable type printing in Europe. The Gutenberg Bible is the first major book printed. The press revolutionizes the spread of knowledge, making books affordable and accelerating literacy, science, and the Reformation.', date: 'c. 1440', side: 'below', stemHeight: 90 },
+      { title: 'Fall of Constantinople', desc: 'The Ottoman Turks under Mehmed II capture Constantinople, ending the Byzantine Empire. Byzantine scholars flee to Italy, bringing Greek manuscripts and classical knowledge that fuels the Italian Renaissance.', date: '1453', side: 'above', stemHeight: 70 },
+      { title: 'Columbus Reaches the Americas', desc: 'Christopher Columbus, sponsored by Spain, reaches the Caribbean islands. Though not the first European in the Americas, his voyage opens sustained contact between the Old and New Worlds — beginning an era of global exchange, colonization, and cultural transformation.', date: '1492', side: 'below', stemHeight: 100 },
+      { title: 'Da Vinci\'s Peak Work', desc: 'Leonardo da Vinci is at the height of his powers — painting the Last Supper (1495-98) and the Mona Lisa (1503-06), while filling thousands of notebook pages with engineering, anatomy, and scientific observations centuries ahead of their time.', date: '1490s–1510s', side: 'above', stemHeight: 115 },
+      { title: 'Michelangelo\'s Sistine Chapel', desc: 'Michelangelo completes the ceiling of the Sistine Chapel, painting 300 figures including the iconic Creation of Adam. Working alone on scaffolding for four years, he creates what many consider the greatest artwork ever made.', date: '1508–1512', side: 'below', stemHeight: 75 },
+      { title: 'Protestant Reformation', desc: 'Martin Luther nails his Ninety-Five Theses to the door of Wittenberg Castle Church, challenging Catholic Church practices. The Reformation fractures Western Christianity permanently and fuels a century of religious wars.', date: 'Oct 31, 1517', side: 'above', stemHeight: 95 },
+      { title: 'Copernican Revolution', desc: 'Nicolaus Copernicus publishes "On the Revolutions of the Celestial Spheres," arguing that the Earth orbits the Sun, not vice versa. The heliocentric model overturns 1,400 years of Ptolemaic astronomy and places humanity in a new cosmic context.', date: '1543', side: 'below', stemHeight: 85 },
+      { title: 'Shakespeare\'s Great Plays', desc: 'William Shakespeare writes his greatest works — Hamlet, Othello, King Lear, Macbeth — at the Globe Theatre in London. His exploration of human psychology, power, and tragedy has never been surpassed in the English language.', date: '1600–1606', side: 'above', stemHeight: 105 },
+      { title: 'Galileo & the Telescope', desc: 'Galileo improves the telescope and turns it skyward, discovering Jupiter\'s moons, the phases of Venus, and sunspots. His observations confirm Copernicus. He is tried by the Inquisition and forced to recant — but the scientific revolution cannot be stopped.', date: '1609–1633', side: 'below', stemHeight: 70 },
+    ],
+    connections: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[1,3],[3,5],[6,8]]
+  },
+];
 
 
 /* ═══════════════════════════════════════════════════════════════
-   2. DOM REFERENCES
+   2. STATE
+═══════════════════════════════════════════════════════════════ */
+
+const State = {
+  events: [],
+  connections: [],
+  nextId: 1,
+
+  panX: 0, panY: 0, zoom: 1,
+  isPanning: false,
+  panStartX: 0, panStartY: 0, panStartMouseX: 0, panStartMouseY: 0,
+
+  draggingNode: null,
+  dragHasMoved: false,
+
+  connectMode: false, connectFromId: null,
+
+  openCardId: null,
+  editingId: null,
+  storyIndex: 0,
+  _storySorted: [],
+
+  SNAP_GRID: 40,
+  AXIS_Y: 5000,
+  STEM_MIN: 50,
+  STEM_MAX: 130,
+
+  get viewportCenterX() {
+    return (-State.panX + window.innerWidth / 2) / State.zoom;
+  },
+};
+
+
+/* ═══════════════════════════════════════════════════════════════
+   3. DOM REFERENCES
 ═══════════════════════════════════════════════════════════════ */
 
 const $ = id => document.getElementById(id);
 const DOM = {
-  canvasWrapper:  $('canvasWrapper'),
-  canvas:         $('canvas'),
-  axisLine:       $('axisLine'),
-  ticksLayer:     $('ticksLayer'),
-  connectionsSvg: $('connectionsSvg'),
-  nodesLayer:     $('nodesLayer'),
+  // Screens
+  welcomeScreen:      $('welcomeScreen'),
+  appShell:           $('appShell'),
+  welcomeTemplates:   $('welcomeTemplates'),
 
-  topbar:         $('topbar'),
-  zoomIn:         $('zoomIn'),
-  zoomOut:        $('zoomOut'),
-  zoomLabel:      $('zoomLabel'),
-  addEventBtn:    $('addEventBtn'),
-  exportBtn:      $('exportBtn'),
-  importBtn:      $('importBtn'),
-  importFileInput:$('importFileInput'),
-  storyModeBtn:   $('storyModeBtn'),
-  timelineName:   $('timelineName'),
+  // Welcome buttons
+  welcomeNew:         $('welcomeNew'),
+  welcomeImport:      $('welcomeImport'),
 
-  modalOverlay:   $('modalOverlay'),
-  modal:          $('modal'),
-  modalTitle:     $('modalTitle'),
-  modalClose:     $('modalClose'),
-  modalCancel:    $('modalCancel'),
-  modalSave:      $('modalSave'),
-  eventTitle:     $('eventTitle'),
-  eventDesc:      $('eventDesc'),
-  eventDate:      $('eventDate'),
+  // Topbar
+  homeBtn:            $('homeBtn'),
+  timelineName:       $('timelineName'),
+  zoomIn:             $('zoomIn'),
+  zoomOut:            $('zoomOut'),
+  zoomLabel:          $('zoomLabel'),
+  addEventBtn:        $('addEventBtn'),
+  exportBtn:          $('exportBtn'),
+  newTimelineBtn:     $('newTimelineBtn'),
+  templatesBtn:       $('templatesBtn'),
+  storyModeBtn:       $('storyModeBtn'),
 
-  contextMenu:    $('contextMenu'),
-  connectTooltip: $('connectTooltip'),
+  // Canvas
+  canvasWrapper:      $('canvasWrapper'),
+  canvas:             $('canvas'),
+  axisLine:           $('axisLine'),
+  ticksLayer:         $('ticksLayer'),
+  connectionsSvg:     $('connectionsSvg'),
+  nodesLayer:         $('nodesLayer'),
 
-  minimap:        $('minimap'),
-  minimapCanvas:  $('minimapCanvas'),
-  minimapViewport:$('minimapViewport'),
-  minimapNodes:   $('minimapNodes'),
+  // Minimap
+  minimapCanvas:      $('minimapCanvas'),
+  minimapViewport:    $('minimapViewport'),
+  minimapNodes:       $('minimapNodes'),
 
-  statusMsg:      $('statusMsg'),
-  nodeCount:      $('nodeCount'),
-  coordDisplay:   $('coordDisplay'),
+  // Status
+  statusMsg:          $('statusMsg'),
+  nodeCount:          $('nodeCount'),
+  coordDisplay:       $('coordDisplay'),
 
-  storyOverlay:   $('storyOverlay'),
-  storyMeta:      $('storyMeta'),
-  storyTitle:     $('storyTitle'),
-  storyDesc:      $('storyDesc'),
-  storyProgress:  $('storyProgress'),
-  storyPrev:      $('storyPrev'),
-  storyNext:      $('storyNext'),
-  storyExit:      $('storyExit'),
+  // Templates panel
+  templatesPanel:     $('templatesPanel'),
+  panelBackdrop:      $('panelBackdrop'),
+  templatesPanelClose:$('templatesPanelClose'),
+  templatesPanelBody: $('templatesPanelBody'),
+
+  // Modals
+  modalOverlay:       $('modalOverlay'),
+  modal:              $('modal'),
+  modalTitle:         $('modalTitle'),
+  modalClose:         $('modalClose'),
+  modalCancel:        $('modalCancel'),
+  modalSave:          $('modalSave'),
+  eventTitle:         $('eventTitle'),
+  eventDesc:          $('eventDesc'),
+  eventDate:          $('eventDate'),
+
+  newTimelineOverlay: $('newTimelineOverlay'),
+  newTlClose:         $('newTlClose'),
+  newTlCancel:        $('newTlCancel'),
+  newTlConfirm:       $('newTlConfirm'),
+  newTlName:          $('newTlName'),
+
+  // Other
+  contextMenu:        $('contextMenu'),
+  connectTooltip:     $('connectTooltip'),
+  importFileInput:    $('importFileInput'),
+
+  // Story
+  storyOverlay:       $('storyOverlay'),
+  storyMeta:          $('storyMeta'),
+  storyTitle:         $('storyTitle'),
+  storyDesc:          $('storyDesc'),
+  storyProgress:      $('storyProgress'),
+  storyPrev:          $('storyPrev'),
+  storyNext:          $('storyNext'),
+  storyExit:          $('storyExit'),
 };
 
 
 /* ═══════════════════════════════════════════════════════════════
-   3. UTILITY FUNCTIONS
+   4. UTILITIES
 ═══════════════════════════════════════════════════════════════ */
 
-function uid() { return State.nextId++; }
+function uid()           { return State.nextId++; }
+function clamp(v, a, b)  { return Math.max(a, Math.min(b, v)); }
+function snapX(x)        { return Math.round(x / State.SNAP_GRID) * State.SNAP_GRID; }
+function randInt(a, b)   { return Math.floor(Math.random() * (b - a + 1)) + a; }
+function findEvent(id)   { return State.events.find(e => e.id === id); }
+function setStatus(msg)  { DOM.statusMsg.textContent = msg; }
+function lerp(a, b, t)   { return a + (b - a) * t; }
 
-/** Apply canvas transform */
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function applyTransform() {
   DOM.canvas.style.transform =
     `translate(${State.panX}px, ${State.panY}px) scale(${State.zoom})`;
 }
 
-/** Convert viewport (mouse) coords → canvas coords */
 function viewportToCanvas(vx, vy) {
-  return {
-    x: (vx - State.panX) / State.zoom,
-    y: (vy - State.panY) / State.zoom,
-  };
+  return { x: (vx - State.panX) / State.zoom, y: (vy - State.panY) / State.zoom };
 }
 
-/** Clamp a value */
-function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-
-/** Snap x to grid */
-function snapX(x) {
-  return Math.round(x / State.SNAP_GRID) * State.SNAP_GRID;
-}
-
-/** Random int between min and max */
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/** Find event by id */
-function findEvent(id) { return State.events.find(e => e.id === id); }
-
-/** Generate a unique safe position for a new event */
-function generateNewEventX() {
-  const cx = State.viewportCenterX;
-  // spread around viewport center with slight randomness
-  const base = snapX(cx + randInt(-160, 160));
-  return base;
-}
-
-/** Set status bar message */
-function setStatus(msg) { DOM.statusMsg.textContent = msg; }
-
-/** Update node count */
 function updateNodeCount() {
   const n = State.events.length;
   DOM.nodeCount.textContent = `${n} event${n !== 1 ? 's' : ''}`;
 }
 
-/** Update zoom label */
 function updateZoomLabel() {
   DOM.zoomLabel.textContent = `${Math.round(State.zoom * 100)}%`;
 }
 
-/** Lerp for smooth zoom */
-function lerp(a, b, t) { return a + (b - a) * t; }
+function generateNewEventX() {
+  return snapX(State.viewportCenterX + randInt(-120, 120));
+}
 
 
 /* ═══════════════════════════════════════════════════════════════
-   4. CANVAS — PAN & ZOOM
+   5. WELCOME SCREEN
+═══════════════════════════════════════════════════════════════ */
+
+function initWelcomeScreen() {
+  // Render template cards on welcome screen
+  const container = DOM.welcomeTemplates;
+  container.innerHTML = '';
+  TEMPLATES.forEach(tpl => {
+    const card = document.createElement('button');
+    card.className = 'wtpl-card';
+    card.innerHTML = `
+      <div class="wtpl-era">${escHtml(tpl.era)}</div>
+      <div class="wtpl-name">${escHtml(tpl.name)}</div>
+      <div class="wtpl-count">${tpl.events.length} events</div>
+    `;
+    card.addEventListener('click', () => loadTemplate(tpl));
+    container.appendChild(card);
+  });
+
+  DOM.welcomeNew.addEventListener('click', () => {
+    startBlankTimeline('Untitled Timeline');
+  });
+
+  DOM.welcomeImport.addEventListener('click', () => {
+    DOM.importFileInput.click();
+  });
+}
+
+function showWelcomeScreen() {
+  DOM.welcomeScreen.style.display = '';
+  DOM.welcomeScreen.style.animation = 'fadeIn 250ms ease both';
+  DOM.appShell.classList.add('hidden');
+  closeCard();
+  exitConnectMode();
+}
+
+function hideWelcomeScreen() {
+  DOM.welcomeScreen.style.animation = 'none';
+  DOM.welcomeScreen.style.opacity = '0';
+  DOM.welcomeScreen.style.transition = 'opacity 200ms';
+  setTimeout(() => {
+    DOM.welcomeScreen.style.display = 'none';
+    DOM.welcomeScreen.style.opacity = '';
+    DOM.welcomeScreen.style.transition = '';
+  }, 200);
+  DOM.appShell.classList.remove('hidden');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   6. APP SHELL — start timelines
+═══════════════════════════════════════════════════════════════ */
+
+function clearTimeline() {
+  State.events = [];
+  State.connections = [];
+  State.nextId = 1;
+  State.openCardId = null;
+  closeCard();
+  DOM.nodesLayer.innerHTML = '';
+  DOM.connectionsSvg.querySelectorAll('.connection-path').forEach(p => p.remove());
+}
+
+function startBlankTimeline(name) {
+  clearTimeline();
+  DOM.timelineName.textContent = name || 'Untitled Timeline';
+  hideWelcomeScreen();
+  initCanvas();
+  updateNodeCount();
+  updateMinimap();
+  updateZoomLabel();
+  setStatus('Blank timeline ready — double-click canvas or press N to add an event');
+}
+
+function loadTemplate(tpl) {
+  clearTimeline();
+  DOM.timelineName.textContent = tpl.name;
+  hideWelcomeScreen();
+  initCanvas();
+
+  // Space events evenly starting at x=4400
+  const spacing = 280;
+  tpl.events.forEach((ev, i) => {
+    const id = uid();
+    const x = 4400 + i * spacing;
+    const obj = {
+      id, title: ev.title, desc: ev.desc, date: ev.date,
+      x, side: ev.side, stemHeight: ev.stemHeight,
+    };
+    State.events.push(obj);
+    renderNode(obj);
+  });
+
+  // Connections use index pairs → resolve to IDs
+  const ids = State.events.map(e => e.id);
+  tpl.connections.forEach(([fi, ti]) => {
+    if (ids[fi] !== undefined && ids[ti] !== undefined) {
+      addConnection(ids[fi], ids[ti], false);
+    }
+  });
+
+  updateNodeCount();
+  updateMinimap();
+  updateZoomLabel();
+  zoomToFit();
+  setStatus(`Loaded "${tpl.name}" — ${tpl.events.length} events`);
+}
+
+// Home button → welcome screen
+DOM.homeBtn.addEventListener('click', showWelcomeScreen);
+
+
+/* ═══════════════════════════════════════════════════════════════
+   7. CANVAS — PAN & ZOOM
 ═══════════════════════════════════════════════════════════════ */
 
 function initCanvas() {
-  // Center the canvas view on the axis
-  const vw = window.innerWidth;
-  const vh = window.innerHeight - 72;
-  // Put canvas center (5000, 5000) at viewport center
+  const vw = window.innerWidth, vh = window.innerHeight - 78;
   State.panX = vw / 2 - 5000 * State.zoom;
   State.panY = vh / 2 - State.AXIS_Y * State.zoom;
+  State.zoom = 1;
   applyTransform();
   drawTicks();
 }
 
-/** Draw axis ticks */
 function drawTicks() {
   const frag = document.createDocumentFragment();
-  const step = 200; // canvas units between ticks
+  const step = 200;
   for (let i = 0; i <= 50; i++) {
     const x = i * step;
     const tick = document.createElement('div');
-    tick.className = 'tick';
+    tick.className = i % 5 === 0 ? 'tick tick-major' : 'tick';
     tick.style.left = x + 'px';
     frag.appendChild(tick);
   }
@@ -225,614 +455,456 @@ function drawTicks() {
   DOM.ticksLayer.appendChild(frag);
 }
 
-// ── Pan ─────────────────────────────────────────────────────
-
-DOM.canvasWrapper.addEventListener('mousedown', onCanvasMouseDown);
-
-function onCanvasMouseDown(e) {
-  if (e.target !== DOM.canvasWrapper && e.target !== DOM.canvas &&
-      e.target !== DOM.axisLine && e.target !== DOM.ticksLayer &&
-      e.target !== DOM.connectionsSvg && !e.target.classList.contains('tick')) return;
-  if (e.button !== 0) return;
-
-  closeCard();
-  hideContextMenu();
-
+// Pan
+DOM.canvasWrapper.addEventListener('mousedown', e => {
+  const targets = [DOM.canvasWrapper, DOM.canvas, DOM.axisLine, DOM.ticksLayer, DOM.connectionsSvg];
+  const ok = targets.includes(e.target) || e.target.classList.contains('tick')
+            || e.target.classList.contains('tick-major') || e.target === DOM.nodesLayer;
+  if (!ok || e.button !== 0) return;
+  closeCard(); hideContextMenu();
   State.isPanning = true;
-  State.panStartX = State.panX;
-  State.panStartY = State.panY;
-  State.panStartMouseX = e.clientX;
-  State.panStartMouseY = e.clientY;
+  State.panStartX = State.panX; State.panStartY = State.panY;
+  State.panStartMouseX = e.clientX; State.panStartMouseY = e.clientY;
   DOM.canvasWrapper.classList.add('dragging');
-}
+});
 
-document.addEventListener('mousemove', onDocMouseMove);
-document.addEventListener('mouseup', onDocMouseUp);
-
-function onDocMouseMove(e) {
-  // Update coord display
+document.addEventListener('mousemove', e => {
   const c = viewportToCanvas(e.clientX, e.clientY);
   DOM.coordDisplay.textContent = `x: ${Math.round(c.x - 5000)}`;
 
   if (State.isPanning) {
-    const dx = e.clientX - State.panStartMouseX;
-    const dy = e.clientY - State.panStartMouseY;
-    State.panX = State.panStartX + dx;
-    State.panY = State.panStartY + dy;
-    applyTransform();
-    updateMinimap();
-    return;
+    State.panX = State.panStartX + (e.clientX - State.panStartMouseX);
+    State.panY = State.panStartY + (e.clientY - State.panStartMouseY);
+    applyTransform(); updateMinimap(); return;
   }
+  if (State.draggingNode) onNodeDragMove(e);
+});
 
-  if (State.draggingNode !== null) {
-    onNodeDragMove(e);
-  }
-}
+document.addEventListener('mouseup', e => {
+  if (State.isPanning) { State.isPanning = false; DOM.canvasWrapper.classList.remove('dragging'); }
+  if (State.draggingNode) onNodeDragEnd(e);
+});
 
-function onDocMouseUp(e) {
-  if (State.isPanning) {
-    State.isPanning = false;
-    DOM.canvasWrapper.classList.remove('dragging');
-  }
-  if (State.draggingNode !== null) {
-    onNodeDragEnd(e);
-  }
-}
-
-// ── Zoom ────────────────────────────────────────────────────
-
-DOM.canvasWrapper.addEventListener('wheel', onWheel, { passive: false });
-
-function onWheel(e) {
+// Zoom
+DOM.canvasWrapper.addEventListener('wheel', e => {
   e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.08 : 0.93;
-  zoomAtPoint(e.clientX, e.clientY, factor);
-}
+  zoomAtPoint(e.clientX, e.clientY, e.deltaY < 0 ? 1.08 : 0.93);
+}, { passive: false });
 
 function zoomAtPoint(vx, vy, factor) {
   const oldZoom = State.zoom;
-  const newZoom = clamp(State.zoom * factor, 0.15, 3);
-
-  // Adjust pan so the point under cursor stays fixed
+  const newZoom = clamp(State.zoom * factor, 0.12, 3);
   State.panX = vx - (vx - State.panX) * (newZoom / oldZoom);
   State.panY = vy - (vy - State.panY) * (newZoom / oldZoom);
   State.zoom = newZoom;
-
-  applyTransform();
-  updateZoomLabel();
-  updateMinimap();
-  updateConnections();
+  applyTransform(); updateZoomLabel(); updateMinimap(); updateConnections();
 }
 
-DOM.zoomIn.addEventListener('click', () => {
-  const vw = window.innerWidth, vh = window.innerHeight - 72;
-  zoomAtPoint(vw / 2, vh / 2, 1.2);
-});
+DOM.zoomIn.addEventListener('click', () => zoomAtPoint(window.innerWidth/2, (window.innerHeight-78)/2, 1.2));
+DOM.zoomOut.addEventListener('click', () => zoomAtPoint(window.innerWidth/2, (window.innerHeight-78)/2, 1/1.2));
 
-DOM.zoomOut.addEventListener('click', () => {
-  const vw = window.innerWidth, vh = window.innerHeight - 72;
-  zoomAtPoint(vw / 2, vh / 2, 1 / 1.2);
-});
-
-/** Zoom to fit all events */
 function zoomToFit() {
-  if (State.events.length === 0) { initCanvas(); return; }
-
+  if (!State.events.length) { initCanvas(); return; }
   const xs = State.events.map(e => e.x);
-  const minX = Math.min(...xs) - 200;
-  const maxX = Math.max(...xs) + 200;
-  const rangeX = maxX - minX;
-
-  const vw = window.innerWidth;
-  const vh = window.innerHeight - 72;
-  const newZoom = clamp(vw / rangeX, 0.2, 2);
-
-  State.zoom = newZoom;
-  const midX = (minX + maxX) / 2;
-  State.panX = vw / 2 - midX * newZoom;
-  State.panY = vh / 2 - State.AXIS_Y * newZoom;
-
-  applyTransform();
-  updateZoomLabel();
-  updateMinimap();
+  const minX = Math.min(...xs) - 250, maxX = Math.max(...xs) + 250;
+  const vw = window.innerWidth, vh = window.innerHeight - 78;
+  State.zoom = clamp(vw / (maxX - minX), 0.18, 1.8);
+  State.panX = vw / 2 - ((minX + maxX) / 2) * State.zoom;
+  State.panY = vh / 2 - State.AXIS_Y * State.zoom;
+  applyTransform(); updateZoomLabel(); updateMinimap();
 }
+
+function panToX(x, animated = true) {
+  const vw = window.innerWidth, vh = window.innerHeight - 78;
+  const targetX = vw / 2 - x * State.zoom;
+  const targetY = vh / 2 - State.AXIS_Y * State.zoom;
+  if (!animated) { State.panX = targetX; State.panY = targetY; applyTransform(); updateMinimap(); return; }
+  const sx = State.panX, sy = State.panY, t0 = performance.now(), dur = 380;
+  const step = now => {
+    const t = Math.min((now - t0) / dur, 1);
+    const e = 1 - Math.pow(1 - t, 3);
+    State.panX = lerp(sx, targetX, e);
+    State.panY = lerp(sy, targetY, e);
+    applyTransform(); updateMinimap();
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Click on blank canvas — close things
+DOM.canvasWrapper.addEventListener('click', e => {
+  const bg = [DOM.canvasWrapper, DOM.canvas, DOM.connectionsSvg];
+  if (bg.includes(e.target) || e.target === DOM.nodesLayer) {
+    closeCard(); if (State.connectMode) exitConnectMode(); hideContextMenu();
+  }
+});
+
+// Double-click to add event at that position
+let _dblX = null;
+DOM.canvasWrapper.addEventListener('dblclick', e => {
+  const bg = [DOM.canvasWrapper, DOM.canvas, DOM.nodesLayer];
+  if (!bg.includes(e.target) && !e.target.classList.contains('tick')) return;
+  _dblX = snapX(viewportToCanvas(e.clientX, e.clientY).x);
+  openCreateModal();
+});
 
 
 /* ═══════════════════════════════════════════════════════════════
-   5. EVENTS — CREATE / EDIT / DELETE
+   8. EVENTS — CREATE / EDIT / DELETE
 ═══════════════════════════════════════════════════════════════ */
 
-let _modalMode = 'create'; // 'create' | 'edit'
+let _modalMode = 'create';
 
 DOM.addEventBtn.addEventListener('click', openCreateModal);
 
 function openCreateModal() {
-  _modalMode = 'create';
-  State.editingId = null;
+  _modalMode = 'create'; State.editingId = null;
   DOM.modalTitle.textContent = 'New Event';
-  DOM.eventTitle.value = '';
-  DOM.eventDesc.value = '';
-  DOM.eventDate.value = '';
-  showModal();
+  DOM.eventTitle.value = ''; DOM.eventDesc.value = ''; DOM.eventDate.value = '';
+  DOM.modalOverlay.classList.remove('hidden');
   setTimeout(() => DOM.eventTitle.focus(), 80);
 }
 
 function openEditModal(id) {
-  const ev = findEvent(id);
-  if (!ev) return;
-  _modalMode = 'edit';
-  State.editingId = id;
+  const ev = findEvent(id); if (!ev) return;
+  _modalMode = 'edit'; State.editingId = id;
   DOM.modalTitle.textContent = 'Edit Event';
-  DOM.eventTitle.value = ev.title;
-  DOM.eventDesc.value = ev.desc;
-  DOM.eventDate.value = ev.date;
-  showModal();
+  DOM.eventTitle.value = ev.title; DOM.eventDesc.value = ev.desc; DOM.eventDate.value = ev.date;
+  DOM.modalOverlay.classList.remove('hidden');
   setTimeout(() => DOM.eventTitle.focus(), 80);
 }
 
-function showModal() {
-  DOM.modalOverlay.classList.remove('hidden');
-}
-
-function hideModal() {
-  DOM.modalOverlay.classList.add('hidden');
-}
-
-DOM.modalClose.addEventListener('click', hideModal);
-DOM.modalCancel.addEventListener('click', hideModal);
-DOM.modalOverlay.addEventListener('click', e => {
-  if (e.target === DOM.modalOverlay) hideModal();
-});
-
-DOM.modalSave.addEventListener('click', saveModal);
-
-// Allow Ctrl+Enter to save
+DOM.modalClose.addEventListener('click', () => DOM.modalOverlay.classList.add('hidden'));
+DOM.modalCancel.addEventListener('click', () => DOM.modalOverlay.classList.add('hidden'));
+DOM.modalOverlay.addEventListener('click', e => { if (e.target === DOM.modalOverlay) DOM.modalOverlay.classList.add('hidden'); });
 DOM.modal.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') saveModal();
-  if (e.key === 'Escape') hideModal();
+  if (e.key === 'Escape') DOM.modalOverlay.classList.add('hidden');
 });
+DOM.modalSave.addEventListener('click', saveModal);
 
 function saveModal() {
   const title = DOM.eventTitle.value.trim();
   if (!title) {
-    DOM.eventTitle.style.borderColor = 'rgba(255,59,59,0.5)';
-    setTimeout(() => DOM.eventTitle.style.borderColor = '', 800);
+    DOM.eventTitle.classList.add('field-error');
+    setTimeout(() => DOM.eventTitle.classList.remove('field-error'), 900);
     return;
   }
-  const desc = DOM.eventDesc.value.trim();
-  const date = DOM.eventDate.value.trim();
-
-  if (_modalMode === 'create') {
-    createEvent(title, desc, date);
-  } else {
-    updateEvent(State.editingId, title, desc, date);
-  }
-  hideModal();
+  const desc = DOM.eventDesc.value.trim(), date = DOM.eventDate.value.trim();
+  if (_modalMode === 'create') createEvent(title, desc, date);
+  else updateEvent(State.editingId, title, desc, date);
+  DOM.modalOverlay.classList.add('hidden');
 }
 
 function createEvent(title, desc, date) {
   const id = uid();
-  const x = generateNewEventX();
-
-  // Alternate above/below for aesthetics
+  const x = _dblX !== null ? _dblX : generateNewEventX();
+  _dblX = null;
   const side = State.events.length % 2 === 0 ? 'above' : 'below';
   const stemHeight = randInt(State.STEM_MIN, State.STEM_MAX);
-
   const ev = { id, title, desc, date, x, side, stemHeight };
   State.events.push(ev);
   renderNode(ev);
-  updateNodeCount();
-  updateMinimap();
-  setStatus(`Event "${title}" created`);
-
-  // Pan to new event
+  updateNodeCount(); updateMinimap();
+  setStatus(`Event "${title}" created — drag to reposition`);
   panToX(x);
 }
 
 function updateEvent(id, title, desc, date) {
-  const ev = findEvent(id);
-  if (!ev) return;
-  ev.title = title;
-  ev.desc = desc;
-  ev.date = date;
-  refreshNode(ev);
-  updateMinimap();
-  setStatus(`Event "${title}" updated`);
-
-  // Refresh open card
-  if (State.openCardId === id) {
-    closeCard();
-    openCard(id);
-  }
+  const ev = findEvent(id); if (!ev) return;
+  ev.title = title; ev.desc = desc; ev.date = date;
+  refreshNodeLabels(ev);
+  if (State.openCardId === id) { closeCard(); openCard(id); }
+  setStatus(`"${title}" updated`);
 }
 
 function deleteEvent(id) {
-  const ev = findEvent(id);
-  if (!ev) return;
-  // Remove connections
   State.connections = State.connections.filter(c => c.fromId !== id && c.toId !== id);
-  // Remove from state
   State.events = State.events.filter(e => e.id !== id);
-  // Remove DOM
-  const el = document.querySelector(`.event-node[data-id="${id}"]`);
-  if (el) el.remove();
-  closeCard();
-  updateConnections();
-  updateNodeCount();
-  updateMinimap();
+  document.querySelector(`.event-node[data-id="${id}"]`)?.remove();
+  closeCard(); updateConnections(); updateNodeCount(); updateMinimap();
   setStatus('Event deleted');
-}
-
-/** Pan so that a canvas X coordinate is centered in viewport */
-function panToX(x) {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight - 72;
-  const targetPanX = vw / 2 - x * State.zoom;
-  const targetPanY = vh / 2 - State.AXIS_Y * State.zoom;
-
-  // Smooth animate
-  const startPanX = State.panX;
-  const startPanY = State.panY;
-  const startTime = performance.now();
-  const duration = 380;
-
-  function step(now) {
-    const t = Math.min((now - startTime) / duration, 1);
-    const ease = 1 - Math.pow(1 - t, 3);
-    State.panX = lerp(startPanX, targetPanX, ease);
-    State.panY = lerp(startPanY, targetPanY, ease);
-    applyTransform();
-    updateMinimap();
-    if (t < 1) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   6. NODE RENDERING
+   9. NODE RENDERING
 ═══════════════════════════════════════════════════════════════ */
 
+function nodePositionCSS(ev) {
+  const isAbove = ev.side === 'above';
+  const stemH = ev.stemHeight;
+  // For above nodes: element top is at (AXIS_Y - stemH - 30), height = stemH+30
+  // For below nodes: element top is at AXIS_Y, height = stemH+30
+  const top  = isAbove ? (State.AXIS_Y - stemH - 30) : State.AXIS_Y;
+  const height = stemH + 30;
+  return { top, height };
+}
+
 function renderNode(ev) {
+  const isAbove = ev.side === 'above';
+  const stemH   = ev.stemHeight;
+  const pos     = nodePositionCSS(ev);
+  const labelOffset = stemH + 38;
+  const dateOffset  = stemH + 22;
+
   const el = document.createElement('div');
   el.className = `event-node ${ev.side}`;
-  el.dataset.id = ev.id;
+  el.dataset.id = String(ev.id);
+  el.style.left   = ev.x + 'px';
+  el.style.top    = pos.top + 'px';
+  el.style.height = pos.height + 'px';
 
-  const stemH = ev.stemHeight;
+  el.innerHTML = `
+    <div class="node-stem"
+         style="${isAbove
+           ? `height:${stemH}px; bottom:20px;`
+           : `height:${stemH}px; top:20px;`}"></div>
+    <div class="node-dot-wrap"
+         style="${isAbove ? 'bottom:15px;' : 'top:15px;'}">
+      <div class="node-dot"></div>
+    </div>
+    <div class="node-label"
+         style="${isAbove
+           ? `bottom:${labelOffset}px;`
+           : `top:${labelOffset}px;`}"
+    >${escHtml(ev.title)}</div>
+    ${ev.date ? `<div class="node-date"
+         style="${isAbove ? `bottom:${dateOffset}px;` : `top:${dateOffset}px;`}"
+    >${escHtml(ev.date)}</div>` : ''}
+  `;
 
-  if (ev.side === 'above') {
-    // Node sits above axis: stem goes down to axis
-    el.style.left = ev.x + 'px';
-    el.style.top = (State.AXIS_Y - stemH - 20) + 'px'; // 20px above stem top
-    el.style.height = (stemH + 20) + 'px';
-  } else {
-    // Node sits below axis: stem goes up to axis
-    el.style.left = ev.x + 'px';
-    el.style.top = State.AXIS_Y + 'px';
-    el.style.height = (stemH + 20) + 'px';
-  }
-
-  el.innerHTML = buildNodeHTML(ev, stemH);
-
-  // Events
-  el.addEventListener('click', e => { e.stopPropagation(); onNodeClick(ev.id, el); });
-  el.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); onNodeRightClick(ev.id, e); });
-  el.addEventListener('mousedown', e => { e.stopPropagation(); onNodeMouseDown(ev.id, e, el); });
+  el.addEventListener('click',       e => { e.stopPropagation(); onNodeClick(ev.id); });
+  el.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); showContextMenu(ev.id, e.clientX, e.clientY); });
+  el.addEventListener('mousedown',   e => { e.stopPropagation(); onNodeMouseDown(ev.id, e); });
 
   DOM.nodesLayer.appendChild(el);
 }
 
-function buildNodeHTML(ev, stemH) {
-  const isAbove = ev.side === 'above';
-  return `
-    <div class="node-stem ${isAbove ? 'above' : 'below'}" style="height:${stemH}px; ${isAbove ? 'bottom:20px' : 'top:20px'};"></div>
-    <div class="node-dot-wrap" style="${isAbove ? 'bottom:20px' : 'top:20px'};">
-      <div class="node-dot"></div>
-    </div>
-    <div class="node-label" style="${isAbove ? 'bottom:' + (stemH + 32) + 'px' : 'top:' + (stemH + 32) + 'px'};">${escHtml(ev.title)}</div>
-    ${ev.date ? `<div class="node-date" style="${isAbove ? 'bottom:' + (stemH + 20) + 'px' : 'top:' + (stemH + 20) + 'px'};">${escHtml(ev.date)}</div>` : ''}
-  `;
-}
-
-function refreshNode(ev) {
+function refreshNodeLabels(ev) {
   const el = document.querySelector(`.event-node[data-id="${ev.id}"]`);
   if (!el) return;
-  const stemH = ev.stemHeight;
-  el.innerHTML = buildNodeHTML(ev, stemH);
-  // Re-attach inner events (outer ones are already on el)
+  const labelEl = el.querySelector('.node-label');
+  const dateEl  = el.querySelector('.node-date');
+  if (labelEl) labelEl.textContent = ev.title;
+  if (dateEl)  dateEl.textContent  = ev.date;
+  if (!dateEl && ev.date) {
+    // Re-render fully if date was added
+    el.remove();
+    renderNode(ev);
+  }
 }
 
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/** Update node DOM position after drag */
 function updateNodePosition(ev) {
   const el = document.querySelector(`.event-node[data-id="${ev.id}"]`);
-  if (!el) return;
-  el.style.left = ev.x + 'px';
+  if (el) el.style.left = ev.x + 'px';
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   7. NODE INTERACTION — CLICK / CARD / DRAG
+   10. NODE INTERACTION — CLICK & CARD
 ═══════════════════════════════════════════════════════════════ */
 
-function onNodeClick(id, el) {
-  if (State.dragHasMoved) return; // suppress click if it was a drag
-
+function onNodeClick(id) {
+  if (State.dragHasMoved) return;
   if (State.connectMode) {
-    // Finalize connection
-    if (id !== State.connectFromId) {
-      addConnection(State.connectFromId, id);
-    }
-    exitConnectMode();
-    return;
+    if (id !== State.connectFromId) addConnection(State.connectFromId, id, true);
+    exitConnectMode(); return;
   }
-
-  // Toggle card
-  if (State.openCardId === id) {
-    closeCard();
-  } else {
-    closeCard();
-    openCard(id);
-  }
+  if (State.openCardId === id) { closeCard(); return; }
+  closeCard(); openCard(id);
 }
-
-function onNodeRightClick(id, e) {
-  showContextMenu(id, e.clientX, e.clientY);
-}
-
-// ── Card ────────────────────────────────────────────────────
 
 function openCard(id) {
-  const ev = findEvent(id);
-  if (!ev) return;
+  const ev = findEvent(id); if (!ev) return;
   State.openCardId = id;
-
   const el = document.querySelector(`.event-node[data-id="${id}"]`);
-  if (el) el.classList.add('selected');
+  el?.classList.add('selected');
 
-  // Figure out screen position of the dot
+  // Get screen coords for the dot
   const dotEl = el?.querySelector('.node-dot');
   let cx = window.innerWidth / 2, cy = window.innerHeight / 2;
   if (dotEl) {
-    const rect = dotEl.getBoundingClientRect();
-    cx = rect.left + rect.width / 2;
-    cy = rect.top + rect.height / 2;
+    const r = dotEl.getBoundingClientRect();
+    cx = r.left + r.width / 2; cy = r.top + r.height / 2;
   }
 
   const card = document.createElement('div');
   card.className = 'node-card';
   card.id = 'activeCard';
   card.innerHTML = `
-    <div class="card-header">
-      <span class="card-title">${escHtml(ev.title)}</span>
-      <button class="card-close">✕</button>
+    <div class="card-top">
+      <div class="card-header">
+        <span class="card-title">${escHtml(ev.title)}</span>
+        <button class="card-close">✕</button>
+      </div>
+      ${ev.date ? `<div class="card-date">${escHtml(ev.date)}</div>` : ''}
     </div>
-    ${ev.date ? `<div class="card-date">${escHtml(ev.date)}</div>` : ''}
-    <div class="card-desc">${escHtml(ev.desc) || '<span style="color:#444">No description</span>'}</div>
-    <div class="card-actions">
-      <button class="card-action-btn" data-action="edit">Edit</button>
-      <button class="card-action-btn" data-action="connect">Connect</button>
-      <button class="card-action-btn" data-action="delete" style="color:#ff3b3b;">Delete</button>
+    <div class="card-body">
+      <div class="card-desc">${ev.desc ? escHtml(ev.desc) : '<span style="color:var(--text-lo)">No description</span>'}</div>
+    </div>
+    <div class="card-footer">
+      <button class="card-btn" data-a="edit">Edit</button>
+      <button class="card-btn" data-a="connect">Connect</button>
+      <button class="card-btn card-btn-danger" data-a="delete">Delete</button>
     </div>
   `;
 
-  // Position card near the node dot, keep in viewport
-  const cardW = 280, cardH = 200;
-  let left = cx + 16;
-  let top  = cy - 60;
-  if (left + cardW > window.innerWidth - 16) left = cx - cardW - 16;
-  if (top + cardH > window.innerHeight - 36) top = window.innerHeight - cardH - 36;
-  if (top < 56) top = 56;
+  // Position near dot, keep in viewport
+  const W = 300, H = 220;
+  let left = cx + 18, top = cy - 70;
+  if (left + W > window.innerWidth - 16) left = cx - W - 18;
+  top = clamp(top, 60, window.innerHeight - H - 32);
 
   card.style.left = left + 'px';
-  card.style.top  = top + 'px';
+  card.style.top  = top  + 'px';
 
   card.querySelector('.card-close').addEventListener('click', closeCard);
-
-  card.querySelectorAll('.card-action-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
-      const action = e.currentTarget.dataset.action;
-      if (action === 'edit') { closeCard(); openEditModal(id); }
-      if (action === 'connect') { closeCard(); enterConnectMode(id); }
-      if (action === 'delete') { closeCard(); deleteEvent(id); }
+  card.querySelectorAll('[data-a]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.a;
+      closeCard();
+      if (a === 'edit')    openEditModal(id);
+      if (a === 'connect') enterConnectMode(id);
+      if (a === 'delete')  deleteEvent(id);
     });
   });
-
   card.addEventListener('click', e => e.stopPropagation());
   document.body.appendChild(card);
 }
 
 function closeCard() {
-  const card = document.getElementById('activeCard');
-  if (card) card.remove();
-  document.querySelectorAll('.event-node.selected')
-    .forEach(el => el.classList.remove('selected'));
+  document.getElementById('activeCard')?.remove();
+  document.querySelectorAll('.event-node.selected').forEach(e => e.classList.remove('selected'));
   State.openCardId = null;
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   8. NODE DRAG & DROP
+   11. NODE DRAG & DROP
 ═══════════════════════════════════════════════════════════════ */
 
-function onNodeMouseDown(id, e, el) {
+function onNodeMouseDown(id, e) {
   if (e.button !== 0) return;
   State.dragHasMoved = false;
-
-  const startMouseX = e.clientX;
-  const ev = findEvent(id);
-  if (!ev) return;
-
-  State.draggingNode = {
-    id,
-    startX: ev.x,
-    startMouseX,
-  };
+  const ev = findEvent(id); if (!ev) return;
+  State.draggingNode = { id, startX: ev.x, startMouseX: e.clientX };
 }
 
 function onNodeDragMove(e) {
-  if (!State.draggingNode) return;
   const { id, startX, startMouseX } = State.draggingNode;
-
   const dx = (e.clientX - startMouseX) / State.zoom;
-  if (Math.abs(dx) > 3) State.dragHasMoved = true;
+  if (Math.abs(dx) > 4) State.dragHasMoved = true;
   if (!State.dragHasMoved) return;
 
-  const ev = findEvent(id);
-  if (!ev) return;
-
-  const rawX = startX + dx;
-  ev.x = snapX(rawX);
-
+  const ev = findEvent(id); if (!ev) return;
+  ev.x = snapX(startX + dx);
   updateNodePosition(ev);
   updateConnections();
   updateMinimap();
 
-  // Mark node as dragging
   const el = document.querySelector(`.event-node[data-id="${id}"]`);
-  if (el) el.classList.add('dragging-node');
+  el?.classList.add('dragging-node');
   closeCard();
 }
 
-function onNodeDragEnd(e) {
+function onNodeDragEnd() {
   if (!State.draggingNode) return;
   const { id } = State.draggingNode;
-  const el = document.querySelector(`.event-node[data-id="${id}"]`);
-  if (el) el.classList.remove('dragging-node');
-
+  document.querySelector(`.event-node[data-id="${id}"]`)?.classList.remove('dragging-node');
   State.draggingNode = null;
   updateConnections();
-
-  if (State.dragHasMoved) {
-    setStatus('Event repositioned');
-  }
-  // dragHasMoved reset on next mousedown
+  if (State.dragHasMoved) setStatus('Event repositioned');
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   9. CONNECTIONS (SVG)
+   12. CONNECTIONS
 ═══════════════════════════════════════════════════════════════ */
 
-function addConnection(fromId, toId) {
-  // Avoid duplicates
-  const exists = State.connections.find(
-    c => (c.fromId === fromId && c.toId === toId) ||
-         (c.fromId === toId && c.toId === fromId)
+function addConnection(fromId, toId, animated = true) {
+  const dup = State.connections.find(
+    c => (c.fromId === fromId && c.toId === toId) || (c.fromId === toId && c.toId === fromId)
   );
-  if (exists) return;
-
+  if (dup) return;
   State.connections.push({ fromId, toId });
-  drawConnection(fromId, toId, true); // animated
-  setStatus('Events connected');
+  drawConnection(fromId, toId, animated);
+  updateMinimap();
+  if (animated) setStatus('Connection created');
 }
 
 function updateConnections() {
-  // Clear existing paths
   DOM.connectionsSvg.querySelectorAll('.connection-path').forEach(p => p.remove());
   State.connections.forEach(c => drawConnection(c.fromId, c.toId, false));
 }
 
 function drawConnection(fromId, toId, animated) {
-  const from = findEvent(fromId);
-  const to = findEvent(toId);
+  const from = findEvent(fromId), to = findEvent(toId);
   if (!from || !to) return;
 
-  // Get dot positions in canvas coords
-  const fromDot = getDotCanvasPos(from);
-  const toDot = getDotCanvasPos(to);
+  const fx = from.x, fy = State.AXIS_Y;
+  const tx = to.x,   ty = State.AXIS_Y;
 
-  if (!fromDot || !toDot) return;
+  // Curve upward if events are on same side, otherwise straight-ish
+  const dx = tx - fx;
+  const curve = Math.abs(dx) * 0.35;
+  const midY  = fy - 60; // arc above the axis line
 
-  // Build a cubic bezier path
-  const dx = toDot.x - fromDot.x;
-  const dy = toDot.y - fromDot.y;
-  const cx1 = fromDot.x + dx * 0.4;
-  const cy1 = fromDot.y;
-  const cx2 = toDot.x - dx * 0.4;
-  const cy2 = toDot.y;
-
-  const d = `M ${fromDot.x} ${fromDot.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${toDot.x} ${toDot.y}`;
+  const d = `M ${fx} ${fy} C ${fx + dx*0.3} ${midY}, ${tx - dx*0.3} ${midY}, ${tx} ${ty}`;
 
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.classList.add('connection-path');
   if (animated) path.classList.add('animated');
   path.setAttribute('d', d);
-  path.dataset.from = fromId;
-  path.dataset.to = toId;
-
-  // Right-click to delete connection
+  path.dataset.from = fromId; path.dataset.to = toId;
   path.style.pointerEvents = 'stroke';
+
   path.addEventListener('contextmenu', e => {
     e.preventDefault();
-    showConnectionContextMenu(fromId, toId, e.clientX, e.clientY);
+    showConnContextMenu(fromId, toId, e.clientX, e.clientY);
   });
 
   DOM.connectionsSvg.appendChild(path);
 }
 
-function getDotCanvasPos(ev) {
-  // Dot is at ev.x, State.AXIS_Y in canvas coords
-  return { x: ev.x, y: State.AXIS_Y };
-}
-
-function showConnectionContextMenu(fromId, toId, cx, cy) {
-  const menu = document.createElement('div');
-  menu.id = 'connCtxMenu';
-  menu.className = 'hidden';
-  menu.style.cssText = `
-    position:fixed; left:${cx}px; top:${cy}px; z-index:1000;
-    background:#0d0d0d; border:1px solid #2a2a2a; border-radius:8px;
-    padding:4px; min-width:140px; box-shadow:0 16px 60px rgba(0,0,0,.9);
-    animation: cardIn 150ms var(--ease) both;
-  `;
+function showConnContextMenu(fromId, toId, cx, cy) {
+  const m = document.createElement('div');
+  Object.assign(m.style, {
+    position:'fixed', left:cx+'px', top:cy+'px', zIndex:1000,
+    background:'var(--surface-1)', border:'1px solid var(--border-2)',
+    borderRadius:'8px', padding:'4px', minWidth:'160px',
+    boxShadow:'0 16px 48px rgba(0,0,0,.85)'
+  });
   const btn = document.createElement('button');
   btn.className = 'ctx-item ctx-danger';
   btn.textContent = 'Remove connection';
   btn.addEventListener('click', () => {
     State.connections = State.connections.filter(
-      c => !(c.fromId === fromId && c.toId === toId) &&
-           !(c.fromId === toId && c.toId === fromId)
+      c => !((c.fromId===fromId&&c.toId===toId)||(c.fromId===toId&&c.toId===fromId))
     );
-    updateConnections();
-    menu.remove();
-    setStatus('Connection removed');
+    updateConnections(); m.remove(); setStatus('Connection removed');
   });
-  menu.appendChild(btn);
-  menu.classList.remove('hidden');
-  document.body.appendChild(menu);
-  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 50);
+  m.appendChild(btn);
+  document.body.appendChild(m);
+  setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }), 50);
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   10. CONNECT MODE
+   13. CONNECT MODE
 ═══════════════════════════════════════════════════════════════ */
 
 function enterConnectMode(fromId) {
-  State.connectMode = true;
-  State.connectFromId = fromId;
+  State.connectMode = true; State.connectFromId = fromId;
   DOM.connectTooltip.classList.remove('hidden');
-  setStatus('Connect mode — click target event');
-
-  // Highlight potential targets
   document.querySelectorAll('.event-node').forEach(el => {
-    if (parseInt(el.dataset.id) !== fromId) {
-      el.classList.add('connect-target');
-    }
+    if (parseInt(el.dataset.id) !== fromId) el.classList.add('connect-target');
   });
+  setStatus('Connect mode — click target event');
 }
 
 function exitConnectMode() {
-  State.connectMode = false;
-  State.connectFromId = null;
+  State.connectMode = false; State.connectFromId = null;
   DOM.connectTooltip.classList.add('hidden');
   document.querySelectorAll('.event-node.connect-target')
     .forEach(el => el.classList.remove('connect-target'));
@@ -841,176 +913,109 @@ function exitConnectMode() {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   11. CONTEXT MENU
+   14. CONTEXT MENU
 ═══════════════════════════════════════════════════════════════ */
 
-let _ctxNodeId = null;
+let _ctxId = null;
 
 function showContextMenu(id, cx, cy) {
-  _ctxNodeId = id;
+  _ctxId = id;
   DOM.contextMenu.style.left = cx + 'px';
-  DOM.contextMenu.style.top = cy + 'px';
+  DOM.contextMenu.style.top  = cy + 'px';
   DOM.contextMenu.classList.remove('hidden');
 }
 
-function hideContextMenu() {
-  DOM.contextMenu.classList.add('hidden');
-  _ctxNodeId = null;
-}
+function hideContextMenu() { DOM.contextMenu.classList.add('hidden'); _ctxId = null; }
 
 DOM.contextMenu.querySelectorAll('.ctx-item').forEach(btn => {
-  btn.addEventListener('click', e => {
-    const action = e.currentTarget.dataset.action;
-    const id = _ctxNodeId;
+  btn.addEventListener('click', () => {
+    const id = _ctxId, a = btn.dataset.action;
     hideContextMenu();
-    if (action === 'edit') openEditModal(id);
-    if (action === 'connect') enterConnectMode(id);
-    if (action === 'delete') deleteEvent(id);
+    if (a === 'edit')    openEditModal(id);
+    if (a === 'connect') enterConnectMode(id);
+    if (a === 'delete')  deleteEvent(id);
   });
 });
 
 document.addEventListener('click', e => {
-  if (!DOM.contextMenu.classList.contains('hidden') &&
-      !DOM.contextMenu.contains(e.target)) {
+  if (!DOM.contextMenu.classList.contains('hidden') && !DOM.contextMenu.contains(e.target))
     hideContextMenu();
-  }
-});
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    hideContextMenu();
-    hideModal();
-    closeCard();
-    if (State.connectMode) exitConnectMode();
-    if (!DOM.storyOverlay.classList.contains('hidden')) exitStoryMode();
-  }
 });
 
 
 /* ═══════════════════════════════════════════════════════════════
-   12. MINI-MAP
+   15. MINI-MAP
 ═══════════════════════════════════════════════════════════════ */
 
-const MM = {
-  W: 178,
-  H: 90,
-  // Canvas range we map onto minimap
-  RANGE_X: 8000,   // canvas units
-  RANGE_Y: 1000,   // canvas units (centered on AXIS_Y)
-  ORIGIN_X: 1000,  // canvas X where minimap starts
-  get ORIGIN_Y() { return State.AXIS_Y - 500; },
-};
+const MM = { W: 188, H: 80, RANGE_X: 8000, RANGE_Y: 800, ORIGIN_X: 1000 };
+MM.ORIGIN_Y = () => State.AXIS_Y - 400;
 
 function updateMinimap() {
-  // Update viewport indicator
-  const vw = window.innerWidth, vh = window.innerHeight - 72;
-  const vpLeft   = (-State.panX) / State.zoom;
-  const vpTop    = (-State.panY) / State.zoom;
-  const vpRight  = vpLeft + vw / State.zoom;
-  const vpBottom = vpTop + vh / State.zoom;
+  const vw = window.innerWidth, vh = window.innerHeight - 78;
+  const vpL = -State.panX / State.zoom, vpT = -State.panY / State.zoom;
+  const vpR = vpL + vw / State.zoom,   vpB = vpT + vh / State.zoom;
 
-  const toMmX = x => ((x - MM.ORIGIN_X) / MM.RANGE_X) * MM.W;
-  const toMmY = y => ((y - MM.ORIGIN_Y) / MM.RANGE_Y) * MM.H;
+  const mx = x => ((x - MM.ORIGIN_X) / MM.RANGE_X) * MM.W;
+  const my = y => ((y - MM.ORIGIN_Y()) / MM.RANGE_Y) * MM.H;
 
-  const mmLeft   = clamp(toMmX(vpLeft),   0, MM.W);
-  const mmTop    = clamp(toMmY(vpTop),    0, MM.H);
-  const mmRight  = clamp(toMmX(vpRight),  0, MM.W);
-  const mmBottom = clamp(toMmY(vpBottom), 0, MM.H);
+  DOM.minimapViewport.style.left   = clamp(mx(vpL), 0, MM.W) + 'px';
+  DOM.minimapViewport.style.top    = clamp(my(vpT), 0, MM.H) + 'px';
+  DOM.minimapViewport.style.width  = (clamp(mx(vpR), 0, MM.W) - clamp(mx(vpL), 0, MM.W)) + 'px';
+  DOM.minimapViewport.style.height = (clamp(my(vpB), 0, MM.H) - clamp(my(vpT), 0, MM.H)) + 'px';
 
-  DOM.minimapViewport.style.left   = mmLeft + 'px';
-  DOM.minimapViewport.style.top    = mmTop  + 'px';
-  DOM.minimapViewport.style.width  = (mmRight  - mmLeft) + 'px';
-  DOM.minimapViewport.style.height = (mmBottom - mmTop)  + 'px';
-
-  // Update dots
   DOM.minimapNodes.innerHTML = '';
   State.events.forEach(ev => {
     const dot = document.createElement('div');
     dot.className = 'minimap-dot';
-    dot.style.left = clamp(toMmX(ev.x), 0, MM.W) + 'px';
+    dot.style.left = clamp(mx(ev.x), 0, MM.W) + 'px';
     dot.style.top  = (MM.H / 2) + 'px';
     DOM.minimapNodes.appendChild(dot);
   });
 }
 
-// Click on minimap to pan
 DOM.minimapCanvas.addEventListener('click', e => {
-  const rect = DOM.minimapCanvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-
-  const canvasX = MM.ORIGIN_X + (mx / MM.W) * MM.RANGE_X;
-  const canvasY = MM.ORIGIN_Y + (my / MM.H) * MM.RANGE_Y;
-
-  const vw = window.innerWidth, vh = window.innerHeight - 72;
-  State.panX = vw / 2 - canvasX * State.zoom;
-  State.panY = vh / 2 - canvasY * State.zoom;
-  applyTransform();
-  updateMinimap();
+  const r = DOM.minimapCanvas.getBoundingClientRect();
+  const cx = MM.ORIGIN_X + ((e.clientX - r.left) / MM.W) * MM.RANGE_X;
+  const cy = MM.ORIGIN_Y() + ((e.clientY - r.top) / MM.H) * MM.RANGE_Y;
+  const vw = window.innerWidth, vh = window.innerHeight - 78;
+  State.panX = vw / 2 - cx * State.zoom;
+  State.panY = vh / 2 - cy * State.zoom;
+  applyTransform(); updateMinimap();
 });
 
 
 /* ═══════════════════════════════════════════════════════════════
-   13. STORY MODE
+   16. STORY MODE
 ═══════════════════════════════════════════════════════════════ */
 
-DOM.storyModeBtn.addEventListener('click', enterStoryMode);
-
-function enterStoryMode() {
-  if (State.events.length === 0) {
-    setStatus('Add events before using Story Mode');
-    return;
-  }
-  // Sort events by X position
-  const sorted = [...State.events].sort((a, b) => a.x - b.x);
-  State._storySorted = sorted;
+DOM.storyModeBtn.addEventListener('click', () => {
+  if (!State.events.length) { setStatus('Add events first to use Story Mode'); return; }
+  State._storySorted = [...State.events].sort((a, b) => a.x - b.x);
   State.storyIndex = 0;
   DOM.storyOverlay.classList.remove('hidden');
   renderStorySlide();
-}
+});
 
 function renderStorySlide() {
-  const sorted = State._storySorted;
-  const idx = State.storyIndex;
-  const ev = sorted[idx];
-
+  const ev = State._storySorted[State.storyIndex];
+  // Reset animation
   DOM.storyCard.style.animation = 'none';
-  DOM.storyCard.offsetHeight; // reflow
+  void DOM.storyCard.offsetHeight;
   DOM.storyCard.style.animation = '';
 
-  DOM.storyMeta.textContent = ev.date || `Event ${idx + 1}`;
-  DOM.storyTitle.textContent = ev.title;
-  DOM.storyDesc.textContent  = ev.desc || '';
-  DOM.storyProgress.textContent = `${idx + 1} / ${sorted.length}`;
-
-  DOM.storyPrev.disabled = idx === 0;
-  DOM.storyNext.disabled = idx === sorted.length - 1;
-
-  // Pan canvas to this event in background
+  DOM.storyMeta.textContent     = ev.date || `Event ${State.storyIndex + 1}`;
+  DOM.storyTitle.textContent    = ev.title;
+  DOM.storyDesc.textContent     = ev.desc || '';
+  DOM.storyProgress.textContent = `${State.storyIndex + 1} / ${State._storySorted.length}`;
+  DOM.storyPrev.disabled = State.storyIndex === 0;
+  DOM.storyNext.disabled = State.storyIndex === State._storySorted.length - 1;
   panToX(ev.x);
 }
 
-DOM.storyNext.addEventListener('click', () => {
-  if (State.storyIndex < State._storySorted.length - 1) {
-    State.storyIndex++;
-    renderStorySlide();
-  }
-});
+DOM.storyNext.addEventListener('click', () => { if (State.storyIndex < State._storySorted.length-1) { State.storyIndex++; renderStorySlide(); } });
+DOM.storyPrev.addEventListener('click', () => { if (State.storyIndex > 0) { State.storyIndex--; renderStorySlide(); } });
+DOM.storyExit.addEventListener('click', () => DOM.storyOverlay.classList.add('hidden'));
 
-DOM.storyPrev.addEventListener('click', () => {
-  if (State.storyIndex > 0) {
-    State.storyIndex--;
-    renderStorySlide();
-  }
-});
-
-DOM.storyExit.addEventListener('click', exitStoryMode);
-
-function exitStoryMode() {
-  DOM.storyOverlay.classList.add('hidden');
-}
-
-// Keyboard navigation in story mode
 document.addEventListener('keydown', e => {
   if (DOM.storyOverlay.classList.contains('hidden')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') DOM.storyNext.click();
@@ -1019,211 +1024,170 @@ document.addEventListener('keydown', e => {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   14. EXPORT / IMPORT
+   17. TEMPLATES PANEL (in-app)
 ═══════════════════════════════════════════════════════════════ */
 
-DOM.exportBtn.addEventListener('click', exportJSON);
+function initTemplatesPanel() {
+  DOM.templatesPanelBody.innerHTML = '';
+  TEMPLATES.forEach(tpl => {
+    const item = document.createElement('button');
+    item.className = 'tpl-item';
+    item.innerHTML = `
+      <div class="tpl-era">${escHtml(tpl.era)}</div>
+      <div class="tpl-name">${escHtml(tpl.name)}</div>
+      <div class="tpl-preview">${escHtml(tpl.preview)}</div>
+      <div class="tpl-meta">${tpl.events.length} events</div>
+    `;
+    item.addEventListener('click', () => {
+      closeTemplatesPanel();
+      if (State.events.length > 0) {
+        // Confirm before overwriting
+        _pendingTemplate = tpl;
+        openNewTimelineModal(tpl.name);
+      } else {
+        loadTemplate(tpl);
+      }
+    });
+    DOM.templatesPanelBody.appendChild(item);
+  });
+}
 
-function exportJSON() {
+function openTemplatesPanel() {
+  DOM.templatesPanel.classList.remove('hidden');
+  DOM.panelBackdrop.classList.remove('hidden');
+}
+
+function closeTemplatesPanel() {
+  DOM.templatesPanel.classList.add('hidden');
+  DOM.panelBackdrop.classList.add('hidden');
+}
+
+DOM.templatesBtn.addEventListener('click', openTemplatesPanel);
+DOM.templatesPanelClose.addEventListener('click', closeTemplatesPanel);
+DOM.panelBackdrop.addEventListener('click', closeTemplatesPanel);
+
+
+/* ═══════════════════════════════════════════════════════════════
+   18. NEW TIMELINE FLOW
+═══════════════════════════════════════════════════════════════ */
+
+let _pendingTemplate = null;
+
+DOM.newTimelineBtn.addEventListener('click', () => {
+  _pendingTemplate = null;
+  openNewTimelineModal('');
+});
+
+function openNewTimelineModal(name) {
+  DOM.newTlName.value = name || '';
+  DOM.newTimelineOverlay.classList.remove('hidden');
+  setTimeout(() => DOM.newTlName.focus(), 80);
+}
+
+DOM.newTlClose.addEventListener('click',   () => DOM.newTimelineOverlay.classList.add('hidden'));
+DOM.newTlCancel.addEventListener('click',  () => DOM.newTimelineOverlay.classList.add('hidden'));
+DOM.newTimelineOverlay.addEventListener('click', e => {
+  if (e.target === DOM.newTimelineOverlay) DOM.newTimelineOverlay.classList.add('hidden');
+});
+
+DOM.newTlConfirm.addEventListener('click', () => {
+  DOM.newTimelineOverlay.classList.add('hidden');
+  if (_pendingTemplate) {
+    loadTemplate(_pendingTemplate);
+    _pendingTemplate = null;
+  } else {
+    startBlankTimeline(DOM.newTlName.value.trim() || 'Untitled Timeline');
+  }
+});
+
+
+/* ═══════════════════════════════════════════════════════════════
+   19. EXPORT / IMPORT
+═══════════════════════════════════════════════════════════════ */
+
+DOM.exportBtn.addEventListener('click', () => {
   const data = {
-    version: 1,
+    version: 2,
     name: DOM.timelineName.textContent.trim(),
     events: State.events,
     connections: State.connections,
     nextId: State.nextId,
   };
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'chrono-timeline.json';
-  a.click();
+  a.href = url; a.download = 'chrono-timeline.json'; a.click();
   URL.revokeObjectURL(url);
-  setStatus('Timeline exported as JSON');
-}
-
-DOM.importBtn.addEventListener('click', () => DOM.importFileInput.click());
+  setStatus('Timeline exported');
+});
 
 DOM.importFileInput.addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = evt => {
-    try {
-      importJSON(JSON.parse(evt.target.result));
-    } catch (err) {
-      setStatus('Import failed — invalid JSON');
-    }
+  reader.onload = ev => {
+    try { importJSON(JSON.parse(ev.target.result)); }
+    catch { setStatus('Import failed — invalid JSON'); }
     DOM.importFileInput.value = '';
   };
   reader.readAsText(file);
 });
 
 function importJSON(data) {
-  if (!data.events || !Array.isArray(data.events)) {
-    setStatus('Import failed — missing events array');
-    return;
-  }
-
-  // Clear current state
-  State.events = [];
-  State.connections = [];
-  DOM.nodesLayer.innerHTML = '';
-  DOM.connectionsSvg.querySelectorAll('.connection-path').forEach(p => p.remove());
-
-  // Load
+  if (!data.events) { setStatus('Import failed — no events found'); return; }
+  clearTimeline();
   State.nextId = data.nextId || 1;
   if (data.name) DOM.timelineName.textContent = data.name;
-
-  data.events.forEach(ev => {
-    State.events.push(ev);
-    renderNode(ev);
-  });
-
-  if (data.connections) {
-    State.connections = data.connections;
-    updateConnections();
-  }
-
-  updateNodeCount();
-  updateMinimap();
+  data.events.forEach(ev => { State.events.push(ev); renderNode(ev); });
+  if (data.connections) { State.connections = data.connections; updateConnections(); }
+  hideWelcomeScreen();
+  initCanvas();
+  updateNodeCount(); updateMinimap();
   zoomToFit();
   setStatus(`Imported "${data.name || 'Timeline'}" — ${State.events.length} events`);
 }
 
-
-/* ═══════════════════════════════════════════════════════════════
-   15. CANVAS CLICK — close card / exit connect
-═══════════════════════════════════════════════════════════════ */
-
-DOM.canvasWrapper.addEventListener('click', e => {
-  if (e.target === DOM.canvasWrapper || e.target === DOM.canvas) {
-    closeCard();
-    if (State.connectMode) exitConnectMode();
-    hideContextMenu();
-  }
-});
+// Welcome import button wires to same file input
+DOM.welcomeImport.addEventListener('click', () => DOM.importFileInput.click());
 
 
 /* ═══════════════════════════════════════════════════════════════
-   16. WINDOW RESIZE
-═══════════════════════════════════════════════════════════════ */
-
-window.addEventListener('resize', () => {
-  updateMinimap();
-  updateConnections();
-});
-
-
-/* ═══════════════════════════════════════════════════════════════
-   17. DOUBLE-CLICK ON CANVAS — quick add event
-═══════════════════════════════════════════════════════════════ */
-
-DOM.canvasWrapper.addEventListener('dblclick', e => {
-  if (e.target !== DOM.canvasWrapper && e.target !== DOM.canvas &&
-      !e.target.classList.contains('tick')) return;
-
-  // Convert to canvas X, use it as the new event X
-  const c = viewportToCanvas(e.clientX, e.clientY);
-  _dblClickX = snapX(c.x);
-  openCreateModal();
-});
-
-let _dblClickX = null;
-
-// Override createEvent to use dblclick X if available
-const _origCreateEvent = createEvent;
-window.createEvent = function(title, desc, date) {
-  const id = uid();
-  const x = _dblClickX !== null ? _dblClickX : generateNewEventX();
-  _dblClickX = null;
-
-  const side = State.events.length % 2 === 0 ? 'above' : 'below';
-  const stemHeight = randInt(State.STEM_MIN, State.STEM_MAX);
-
-  const ev = { id, title, desc, date, x, side, stemHeight };
-  State.events.push(ev);
-  renderNode(ev);
-  updateNodeCount();
-  updateMinimap();
-  setStatus(`Event "${title}" created`);
-  panToX(x);
-};
-
-// Redirect saveModal's createEvent call
-function createEvent(title, desc, date) {
-  window.createEvent(title, desc, date);
-}
-
-
-/* ═══════════════════════════════════════════════════════════════
-   18. KEYBOARD SHORTCUTS
+   20. KEYBOARD SHORTCUTS
 ═══════════════════════════════════════════════════════════════ */
 
 document.addEventListener('keydown', e => {
-  // Skip if focused on input
-  if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-  if (document.activeElement.isContentEditable) return;
+  const inInput = ['INPUT','TEXTAREA'].includes(document.activeElement.tagName)
+                  || document.activeElement.isContentEditable;
+
+  if (e.key === 'Escape') {
+    if (!DOM.modalOverlay.classList.contains('hidden'))       { DOM.modalOverlay.classList.add('hidden'); return; }
+    if (!DOM.newTimelineOverlay.classList.contains('hidden')) { DOM.newTimelineOverlay.classList.add('hidden'); return; }
+    if (!DOM.storyOverlay.classList.contains('hidden'))       { DOM.storyOverlay.classList.add('hidden'); return; }
+    if (!DOM.templatesPanel.classList.contains('hidden'))     { closeTemplatesPanel(); return; }
+    if (State.connectMode)                                    { exitConnectMode(); return; }
+    closeCard();
+  }
+
+  if (inInput) return;
 
   if (e.key === 'n' || e.key === 'N') openCreateModal();
   if (e.key === 'f' || e.key === 'F') zoomToFit();
-  if (e.key === '+' || e.key === '=') {
-    const vw = window.innerWidth, vh = window.innerHeight - 72;
-    zoomAtPoint(vw / 2, vh / 2, 1.15);
-  }
-  if (e.key === '-') {
-    const vw = window.innerWidth, vh = window.innerHeight - 72;
-    zoomAtPoint(vw / 2, vh / 2, 1 / 1.15);
-  }
-  if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (State.openCardId) deleteEvent(State.openCardId);
-  }
+  if (e.key === '+' || e.key === '=') zoomAtPoint(window.innerWidth/2, (window.innerHeight-78)/2, 1.15);
+  if (e.key === '-') zoomAtPoint(window.innerWidth/2, (window.innerHeight-78)/2, 1/1.15);
+  if ((e.key === 'Delete' || e.key === 'Backspace') && State.openCardId) deleteEvent(State.openCardId);
 });
 
-
-/* ═══════════════════════════════════════════════════════════════
-   19. SAMPLE DATA — first load demo
-═══════════════════════════════════════════════════════════════ */
-
-function loadSampleData() {
-  const samples = [
-    { title: 'Project Kickoff',  desc: 'Initial meeting with all stakeholders. Defined scope, timeline, and key deliverables for the upcoming quarter.', date: 'Jan 2024', x: 4600, side: 'above', stemHeight: 80  },
-    { title: 'Research Phase',   desc: 'Deep dive into user interviews, market analysis, and competitor audit. Synthesized findings into 3 core opportunity areas.', date: 'Feb 2024', x: 4840, side: 'below', stemHeight: 60  },
-    { title: 'Design Sprint',    desc: 'Rapid prototyping week. Produced 12 concepts, narrowed to 3 through team voting and user feedback sessions.', date: 'Mar 2024', x: 5080, side: 'above', stemHeight: 110 },
-    { title: 'MVP Launch',       desc: 'First public release shipped to 500 beta users. Core features stable. Observability stack fully deployed.', date: 'Apr 2024', x: 5320, side: 'below', stemHeight: 75  },
-    { title: 'First Milestone',  desc: '10,000 users onboarded. NPS score of 62. Retention at 68% after 30 days — well above industry baseline.', date: 'May 2024', x: 5560, side: 'above', stemHeight: 95  },
-  ];
-
-  samples.forEach(s => {
-    const id = uid();
-    const ev = { id, ...s };
-    State.events.push(ev);
-    renderNode(ev);
-  });
-
-  // Connections
-  addConnection(1, 2);
-  addConnection(2, 3);
-  addConnection(3, 4);
-  addConnection(4, 5);
-  addConnection(2, 4); // branch
-
-  updateNodeCount();
-  updateMinimap();
-  setStatus('Welcome to Chrono — double-click canvas to add events, or press N');
-}
+window.addEventListener('resize', () => { updateMinimap(); updateConnections(); });
 
 
 /* ═══════════════════════════════════════════════════════════════
-   20. INIT
+   21. INIT
 ═══════════════════════════════════════════════════════════════ */
 
 function init() {
-  initCanvas();
-  loadSampleData();
-  updateZoomLabel();
-  updateMinimap();
+  initWelcomeScreen();
+  initTemplatesPanel();
+  // Start on welcome screen — no auto-loaded sample data
+  // (user chooses New, Import, or a Historical template)
 }
 
 init();

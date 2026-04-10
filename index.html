@@ -199,19 +199,74 @@
     Click another event to connect — <kbd>Esc</kbd> to cancel
   </div>
 
-  <!-- STORY MODE -->
+  <!-- ═══════════════════════════════════════════════════════
+       STORY MODE — Cinematic full-screen storyteller
+  ════════════════════════════════════════════════════════ -->
   <div id="storyOverlay" class="hidden">
-    <div id="storyCard">
-      <div class="story-meta" id="storyMeta"></div>
-      <h2 class="story-title" id="storyTitle"></h2>
-      <p class="story-desc" id="storyDesc"></p>
+
+    <!-- Full-bleed image layers (two — cross-fade between them) -->
+    <div class="story-img-layer" id="storyImgA"></div>
+    <div class="story-img-layer" id="storyImgB"></div>
+
+    <!-- Gradient overlays for text legibility -->
+    <div class="story-gradient-left"></div>
+    <div class="story-gradient-bottom"></div>
+    <div class="story-vignette"></div>
+
+    <!-- Top bar -->
+    <div class="story-topbar">
+      <div class="story-topbar-left">
+        <span class="story-logo">◈</span>
+        <span class="story-timeline-name" id="storyTimelineName"></span>
+      </div>
+      <div class="story-topbar-right">
+        <div class="story-img-credit" id="storyImgCredit"></div>
+        <button class="story-exit-btn" id="storyExit">✕ Exit</button>
+      </div>
     </div>
-    <div id="storyNav">
-      <button class="story-btn" id="storyPrev">←</button>
-      <span id="storyProgress"></span>
-      <button class="story-btn" id="storyNext">→</button>
-      <button class="story-exit" id="storyExit">Exit Story Mode</button>
+
+    <!-- Progress track -->
+    <div class="story-progress-track">
+      <div class="story-progress-fill" id="storyProgressFill"></div>
     </div>
+
+    <!-- Chapter dots -->
+    <div class="story-chapters" id="storyChapters"></div>
+
+    <!-- Main stage — left-anchored text -->
+    <div class="story-stage" id="storyStage">
+      <div class="story-slide" id="storySlide">
+        <div class="slide-eyebrow" id="slideEyebrow"></div>
+        <h1 class="slide-title" id="slideTitle"></h1>
+        <div class="slide-rule"></div>
+        <p class="slide-body" id="slideBody"></p>
+      </div>
+    </div>
+
+    <!-- Image loading shimmer (shown while image loads) -->
+    <div class="story-img-loading" id="storyImgLoading"></div>
+
+    <!-- Navigation -->
+    <div class="story-nav">
+      <button class="snav-btn snav-prev" id="storyPrev" title="Previous (←)">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M11 4L6 9L11 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="snav-center">
+        <span class="snav-index" id="storyIndex">1</span>
+        <span class="snav-sep">of</span>
+        <span class="snav-total" id="storyTotal">1</span>
+      </div>
+      <button class="snav-btn snav-next" id="storyNext" title="Next (→)">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M7 4L12 9L7 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="story-hint">← → arrow keys to navigate</div>
+
   </div>
 
   <!-- CONTEXT MENU -->

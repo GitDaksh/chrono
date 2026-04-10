@@ -265,13 +265,20 @@ const DOM = {
 
   // Story
   storyOverlay:       $('storyOverlay'),
-  storyMeta:          $('storyMeta'),
-  storyTitle:         $('storyTitle'),
-  storyDesc:          $('storyDesc'),
-  storyProgress:      $('storyProgress'),
+  storyTimelineName:  $('storyTimelineName'),
+  storyProgressFill:  $('storyProgressFill'),
+  storyChapters:      $('storyChapters'),
+  storyStage:         $('storyStage'),
+  storySlide:         $('storySlide'),
+  slideEyebrow:       $('slideEyebrow'),
+  slideTitle:         $('slideTitle'),
+  slideBody:          $('slideBody'),
+  storyIndex:         $('storyIndex'),
+  storyTotal:         $('storyTotal'),
   storyPrev:          $('storyPrev'),
   storyNext:          $('storyNext'),
   storyExit:          $('storyExit'),
+  storyImgCredit:     $('storyImgCredit'),
 };
 
 
@@ -988,38 +995,390 @@ DOM.minimapCanvas.addEventListener('click', e => {
    16. STORY MODE
 ═══════════════════════════════════════════════════════════════ */
 
-DOM.storyModeBtn.addEventListener('click', () => {
-  if (!State.events.length) { setStatus('Add events first to use Story Mode'); return; }
-  State._storySorted = [...State.events].sort((a, b) => a.x - b.x);
-  State.storyIndex = 0;
-  DOM.storyOverlay.classList.remove('hidden');
-  renderStorySlide();
-});
+/* ═══════════════════════════════════════════════════════════════
+   16. STORY MODE — Cinematic image-backed storyteller
+═══════════════════════════════════════════════════════════════ */
 
-function renderStorySlide() {
-  const ev = State._storySorted[State.storyIndex];
-  // Reset animation
-  DOM.storyCard.style.animation = 'none';
-  void DOM.storyCard.offsetHeight;
-  DOM.storyCard.style.animation = '';
+const Story = {
+  sorted:        [],
+  index:         0,
+  direction:     'next',
+  transitioning: false,
+  imageCache:    {},   // eventId → { url, credit }
+  activeLayer:   'A',  // which img layer is currently shown
+  prefetchQueue: [],
+};
 
-  DOM.storyMeta.textContent     = ev.date || `Event ${State.storyIndex + 1}`;
-  DOM.storyTitle.textContent    = ev.title;
-  DOM.storyDesc.textContent     = ev.desc || '';
-  DOM.storyProgress.textContent = `${State.storyIndex + 1} / ${State._storySorted.length}`;
-  DOM.storyPrev.disabled = State.storyIndex === 0;
-  DOM.storyNext.disabled = State.storyIndex === State._storySorted.length - 1;
-  panToX(ev.x);
+// DOM shortcuts for story elements
+const SD = {
+  get imgA()      { return document.getElementById('storyImgA'); },
+  get imgB()      { return document.getElementById('storyImgB'); },
+  get loading()   { return document.getElementById('storyImgLoading'); },
+  get credit()    { return document.getElementById('storyImgCredit'); },
+};
+
+/* ── Wikipedia image search ────────────────────────────────── */
+
+// Per-event curated Wikipedia search terms for historical templates
+// Falls back to building a query from title + date
+const IMAGE_QUERIES = {
+  // WW1
+  'Assassination of Archduke Franz Ferdinand': 'Assassination Franz Ferdinand Sarajevo 1914',
+  'Austria-Hungary Declares War on Serbia':    'Austria Hungary Serbia war 1914 declaration',
+  'Germany Declares War on Russia & France':   'World War I mobilization 1914 German soldiers',
+  'Britain Enters the War':                    'British Expeditionary Force 1914',
+  'First Battle of the Marne':                 'Battle of the Marne 1914 Western Front',
+  'Battle of Verdun Begins':                   'Battle of Verdun 1916 trenches',
+  'Battle of the Somme':                       'Battle of the Somme 1916 soldiers',
+  'USA Enters the War':                        'United States World War I troops 1917',
+  'Russian Revolution & Exit':                 'Russian Revolution 1917 Bolshevik',
+  'The Hundred Days Offensive':                'Hundred Days Offensive 1918 Allied troops',
+  'Armistice — War Ends':                      'Armistice 1918 World War I celebration',
+  // WW2
+  'Germany Invades Poland':                    'Germany invasion Poland 1939 Wehrmacht',
+  'Fall of France':                            'Dunkirk evacuation 1940 France fall',
+  'Battle of Britain':                         'Battle of Britain RAF Spitfire 1940',
+  'Operation Barbarossa':                      'Operation Barbarossa 1941 Eastern Front',
+  'Attack on Pearl Harbor':                    'Pearl Harbor attack 1941 USS Arizona',
+  'Battle of Stalingrad':                      'Battle of Stalingrad 1942 ruins',
+  'D-Day — Normandy Landings':                 'D-Day Normandy landings 1944 Omaha Beach',
+  'Liberation of Paris':                       'Liberation of Paris 1944 celebration',
+  'Battle of the Bulge':                       'Battle of the Bulge 1944 Ardennes snow',
+  'VE Day — Victory in Europe':                'VE Day 1945 celebration London crowds',
+  'Atomic Bombings of Hiroshima & Nagasaki':   'Hiroshima atomic bomb mushroom cloud 1945',
+  'VJ Day — Victory over Japan':               'VJ Day 1945 victory celebration Times Square',
+  // Cold War
+  'Truman Doctrine':                           'Truman 1947 Congress speech Cold War',
+  'Berlin Blockade & Airlift':                 'Berlin Airlift 1948 airplane cargo',
+  'NATO Founded':                              'NATO 1949 founding treaty signing',
+  'Korean War':                                'Korean War 1950 soldiers frontline',
+  'Sputnik Launch':                            'Sputnik 1957 satellite Soviet space',
+  'Cuban Missile Crisis':                      'Cuban Missile Crisis 1962 Kennedy',
+  'Apollo 11 Moon Landing':                    'Apollo 11 Moon landing 1969 Armstrong',
+  'Vietnam War Ends':                          'Saigon fall 1975 Vietnam War helicopter',
+  'Soviet Invasion of Afghanistan':            'Soviet Afghanistan war 1979 soldiers',
+  'Fall of the Berlin Wall':                   'Berlin Wall fall 1989 crowds celebration',
+  'Dissolution of the USSR':                   'Soviet Union dissolution 1991 flag',
+  // Space Race
+  'Sputnik 1 — First Satellite':               'Sputnik satellite 1957 Soviet space',
+  'Laika in Space':                            'Laika dog Sputnik 2 space 1957',
+  'Explorer 1 — First US Satellite':           'Explorer 1 satellite 1958 NASA launch',
+  'Yuri Gagarin — First Human in Space':       'Yuri Gagarin Vostok 1 cosmonaut 1961',
+  "Kennedy's Moon Speech":                     'Kennedy Moon speech Congress 1961',
+  'John Glenn Orbits Earth':                   'John Glenn Friendship 7 orbit 1962',
+  'First Spacewalk — Alexei Leonov':           'Alexei Leonov spacewalk 1965',
+  'Apollo 1 Tragedy':                          'Apollo 1 fire tragedy 1967 NASA',
+  'Apollo 8 — First to the Moon':              'Apollo 8 Earthrise photograph 1968 Moon orbit',
+  'Apollo 11 — Moon Landing':                  'Neil Armstrong Moon footprint Apollo 11 1969',
+  'Apollo 13 — Successful Failure':            'Apollo 13 1970 splashdown crew',
+  'Last Moon Landing — Apollo 17':             'Apollo 17 Moon rover Cernan 1972',
+  // Internet
+  'ARPANET First Message':                     'ARPANET 1969 computer network early internet',
+  'TCP/IP Protocol':                           'TCP IP protocol internet 1974 Cerf Kahn',
+  'World Wide Web Invented':                   'Tim Berners-Lee World Wide Web CERN 1989',
+  'Mosaic Browser Released':                   'Mosaic web browser 1993 NCSA graphical',
+  'Amazon & eBay Founded':                     'Amazon 1994 Jeff Bezos early website',
+  'Google Founded':                            'Google 1998 Larry Page Sergey Brin Stanford',
+  'Dot-com Bust':                              'Dot-com bubble burst 2000 NASDAQ crash',
+  'Wikipedia Launched':                        'Wikipedia 2001 online encyclopedia launch',
+  'Facebook Goes Global':                      'Facebook 2006 social network growth',
+  'iPhone Launched':                           'Steve Jobs iPhone launch 2007 Apple keynote',
+  // Renaissance
+  'Black Death Sweeps Europe':                 'Black Death plague medieval Europe 14th century',
+  "Gutenberg's Printing Press":                'Gutenberg printing press 1440 movable type',
+  'Fall of Constantinople':                    'Fall of Constantinople 1453 Ottoman siege',
+  'Columbus Reaches the Americas':             'Christopher Columbus 1492 ship Americas voyage',
+  "Da Vinci's Peak Work":                      'Leonardo da Vinci Mona Lisa Last Supper Renaissance',
+  "Michelangelo's Sistine Chapel":             'Michelangelo Sistine Chapel ceiling Creation of Adam',
+  'Protestant Reformation':                    'Martin Luther 1517 Ninety Five Theses Reformation',
+  'Copernican Revolution':                     'Copernicus heliocentric model solar system 1543',
+  "Shakespeare's Great Plays":                 'Shakespeare Globe Theatre 1600 Hamlet',
+  'Galileo & the Telescope':                   'Galileo telescope 1609 astronomy Jupiter moons',
+};
+
+async function fetchWikimediaImage(eventTitle, dateHint) {
+  // Build a smart search query
+  const query = IMAGE_QUERIES[eventTitle]
+    || `${eventTitle} ${dateHint || ''}`.trim();
+
+  const url = `https://en.wikipedia.org/w/api.php?` + new URLSearchParams({
+    action:      'query',
+    generator:   'search',
+    gsrsearch:   query,
+    gsrnamespace:'6',        // File namespace only
+    gsrlimit:    '8',
+    prop:        'imageinfo',
+    iiprop:      'url|extmetadata',
+    iiurlwidth:  '1600',
+    format:      'json',
+    origin:      '*',
+  });
+
+  const res  = await fetch(url);
+  const data = await res.json();
+  const pages = Object.values(data?.query?.pages || {});
+
+  // Filter to real photos (jpg/jpeg/png), skip SVGs, logos, flags, maps
+  const skip = /flag|coat|logo|map|portrait|diagram|svg|icon|seal|banner|emblem|template|stub/i;
+  const candidates = pages.filter(p => {
+    const name = (p.title || '').toLowerCase();
+    const mime = (p.imageinfo?.[0]?.mime || '');
+    return !skip.test(name) && (mime.includes('jpeg') || mime.includes('png') || mime.includes('jpg'));
+  });
+
+  if (!candidates.length) return null;
+
+  // Pick the one with best resolution (widest thumb)
+  candidates.sort((a, b) => {
+    const wa = a.imageinfo?.[0]?.thumbwidth || 0;
+    const wb = b.imageinfo?.[0]?.thumbwidth || 0;
+    return wb - wa;
+  });
+
+  const best = candidates[0];
+  const info = best.imageinfo?.[0];
+  if (!info?.thumburl) return null;
+
+  const artist = info.extmetadata?.Artist?.value?.replace(/<[^>]+>/g,'') || '';
+  const license = info.extmetadata?.LicenseShortName?.value || '';
+  const credit  = [artist, license].filter(Boolean).join(' · ') || 'Wikimedia Commons';
+
+  return { url: info.thumburl, credit };
 }
 
-DOM.storyNext.addEventListener('click', () => { if (State.storyIndex < State._storySorted.length-1) { State.storyIndex++; renderStorySlide(); } });
-DOM.storyPrev.addEventListener('click', () => { if (State.storyIndex > 0) { State.storyIndex--; renderStorySlide(); } });
-DOM.storyExit.addEventListener('click', () => DOM.storyOverlay.classList.add('hidden'));
+/* ── Image layer management ────────────────────────────────── */
 
+function getActiveLayer()   { return Story.activeLayer === 'A' ? SD.imgA : SD.imgB; }
+function getInactiveLayer() { return Story.activeLayer === 'A' ? SD.imgB : SD.imgA; }
+
+function crossFadeTo(url, credit) {
+  const incoming = getInactiveLayer();
+  const outgoing = getActiveLayer();
+
+  // Preload image before showing
+  const img = new Image();
+  img.onload = () => {
+    // Set image on incoming layer
+    incoming.style.backgroundImage = `url('${url}')`;
+    incoming.style.opacity = '0';
+    incoming.style.display = '';
+
+    // Remove Ken Burns from both, restart on incoming
+    incoming.className = 'story-img-layer';
+    outgoing.className = 'story-img-layer';
+
+    // Force reflow, then fade in
+    void incoming.offsetHeight;
+
+    // Pick Ken Burns direction based on index parity
+    const kbClass = Story.index % 2 === 0 ? 'kb-zoom' : 'kb-zoom-r';
+    incoming.classList.add(kbClass);
+    incoming.style.opacity = '1';
+
+    // Fade out old layer
+    outgoing.style.opacity = '0';
+
+    // Swap active
+    Story.activeLayer = Story.activeLayer === 'A' ? 'B' : 'A';
+
+    // Show credit
+    SD.credit.textContent = `© ${credit}`;
+
+    // Hide shimmer
+    SD.loading.classList.remove('active');
+  };
+
+  img.onerror = () => {
+    // No image found — just clear to dark bg
+    SD.loading.classList.remove('active');
+    clearImageLayers();
+  };
+
+  img.src = url;
+}
+
+function clearImageLayers() {
+  SD.imgA.style.opacity = '0';
+  SD.imgB.style.opacity = '0';
+  SD.imgA.style.backgroundImage = '';
+  SD.imgB.style.backgroundImage = '';
+  SD.credit.textContent = '';
+}
+
+/* ── Prefetch next/prev images ─────────────────────────────── */
+
+async function prefetchAdjacentImages() {
+  const indices = [Story.index + 1, Story.index - 1].filter(
+    i => i >= 0 && i < Story.sorted.length
+  );
+  for (const idx of indices) {
+    const ev = Story.sorted[idx];
+    if (!ev || Story.imageCache[ev.id]) continue;
+    try {
+      const result = await fetchWikimediaImage(ev.title, ev.date);
+      if (result) Story.imageCache[ev.id] = result;
+    } catch {}
+  }
+}
+
+/* ── Load image for current slide ─────────────────────────── */
+
+async function loadSlideImage(ev) {
+  // Already cached?
+  if (Story.imageCache[ev.id]) {
+    crossFadeTo(Story.imageCache[ev.id].url, Story.imageCache[ev.id].credit);
+    prefetchAdjacentImages();
+    return;
+  }
+
+  // Show shimmer while loading
+  SD.loading.classList.add('active');
+  SD.credit.textContent = '';
+
+  try {
+    const result = await fetchWikimediaImage(ev.title, ev.date);
+    if (result) {
+      Story.imageCache[ev.id] = result;
+      crossFadeTo(result.url, result.credit);
+    } else {
+      SD.loading.classList.remove('active');
+      clearImageLayers();
+    }
+  } catch (err) {
+    SD.loading.classList.remove('active');
+    clearImageLayers();
+  }
+
+  prefetchAdjacentImages();
+}
+
+/* ── Core story functions ──────────────────────────────────── */
+
+DOM.storyModeBtn.addEventListener('click', enterStoryMode);
+
+function enterStoryMode() {
+  if (!State.events.length) {
+    setStatus('Add events first to use Story Mode');
+    return;
+  }
+
+  Story.sorted        = [...State.events].sort((a, b) => a.x - b.x);
+  Story.index         = 0;
+  Story.transitioning = false;
+  Story.activeLayer   = 'A';
+
+  // Reset image layers
+  SD.imgA.style.opacity = '0'; SD.imgA.className = 'story-img-layer';
+  SD.imgB.style.opacity = '0'; SD.imgB.className = 'story-img-layer';
+
+  DOM.storyTimelineName.textContent = DOM.timelineName.textContent.trim();
+
+  buildChapterDots();
+  DOM.storyOverlay.classList.remove('hidden');
+  renderStorySlide(false);
+}
+
+function exitStoryMode() {
+  DOM.storyOverlay.classList.add('hidden');
+  // Let images settle, then clear
+  setTimeout(clearImageLayers, 600);
+}
+
+function buildChapterDots() {
+  DOM.storyChapters.innerHTML = '';
+  Story.sorted.forEach((ev, i) => {
+    const dot = document.createElement('button');
+    dot.className = 'story-chap';
+    dot.title = ev.title;
+    dot.addEventListener('click', () => jumpToSlide(i));
+    DOM.storyChapters.appendChild(dot);
+  });
+}
+
+function jumpToSlide(idx) {
+  if (Story.transitioning || idx === Story.index) return;
+  Story.direction = idx > Story.index ? 'next' : 'prev';
+  Story.index = idx;
+  renderStorySlide(true);
+}
+
+function renderStorySlide(animated) {
+  const ev    = Story.sorted[Story.index];
+  const total = Story.sorted.length;
+
+  // Progress fill
+  DOM.storyProgressFill.style.width = `${((Story.index + 1) / total) * 100}%`;
+
+  // Counter
+  DOM.storyIndex.textContent = Story.index + 1;
+  DOM.storyTotal.textContent = total;
+
+  // Chapter dots
+  DOM.storyChapters.querySelectorAll('.story-chap').forEach((dot, i) => {
+    dot.classList.toggle('active',  i === Story.index);
+    dot.classList.toggle('visited', i < Story.index);
+  });
+
+  // Nav buttons
+  DOM.storyPrev.disabled = Story.index === 0;
+  DOM.storyNext.disabled = Story.index === total - 1;
+
+  // Load image (async — non-blocking)
+  loadSlideImage(ev);
+
+  // Pan background canvas
+  panToX(ev.x);
+
+  if (!animated) {
+    setSlideContent(ev);
+    DOM.storySlide.className = 'story-slide';
+    return;
+  }
+
+  // Text transition
+  Story.transitioning = true;
+  const exitCls  = Story.direction === 'next' ? 'exit-left'  : 'exit-right';
+  const enterCls = Story.direction === 'next' ? 'enter-right' : 'enter-left';
+
+  DOM.storySlide.classList.add(exitCls);
+  setTimeout(() => {
+    setSlideContent(ev);
+    DOM.storySlide.className = `story-slide ${enterCls}`;
+    setTimeout(() => { Story.transitioning = false; }, 480);
+  }, 250);
+}
+
+function setSlideContent(ev) {
+  DOM.slideEyebrow.textContent = ev.date || `Event ${Story.index + 1} of ${Story.sorted.length}`;
+  DOM.slideTitle.textContent   = ev.title;
+  DOM.slideBody.textContent    = ev.desc || 'No description provided for this event.';
+}
+
+// Nav buttons
+DOM.storyNext.addEventListener('click', () => {
+  if (Story.transitioning) return;
+  if (Story.index < Story.sorted.length - 1) {
+    Story.direction = 'next'; Story.index++;
+    renderStorySlide(true);
+  }
+});
+
+DOM.storyPrev.addEventListener('click', () => {
+  if (Story.transitioning) return;
+  if (Story.index > 0) {
+    Story.direction = 'prev'; Story.index--;
+    renderStorySlide(true);
+  }
+});
+
+DOM.storyExit.addEventListener('click', exitStoryMode);
+
+// Keyboard
 document.addEventListener('keydown', e => {
   if (DOM.storyOverlay.classList.contains('hidden')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') DOM.storyNext.click();
   if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   DOM.storyPrev.click();
+  if (e.key === 'Escape') exitStoryMode();
 });
 
 
@@ -1161,7 +1520,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (!DOM.modalOverlay.classList.contains('hidden'))       { DOM.modalOverlay.classList.add('hidden'); return; }
     if (!DOM.newTimelineOverlay.classList.contains('hidden')) { DOM.newTimelineOverlay.classList.add('hidden'); return; }
-    if (!DOM.storyOverlay.classList.contains('hidden'))       { DOM.storyOverlay.classList.add('hidden'); return; }
+    if (!DOM.storyOverlay.classList.contains('hidden'))       { exitStoryMode(); return; }
     if (!DOM.templatesPanel.classList.contains('hidden'))     { closeTemplatesPanel(); return; }
     if (State.connectMode)                                    { exitConnectMode(); return; }
     closeCard();
